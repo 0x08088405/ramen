@@ -1,0 +1,18 @@
+[package]
+name = "ramen"
+version = "0.0.3"
+authors = ["viri <hi@viri.moe>"]
+edition = "2021"
+rust-version = "1.57"
+description = "Cross-platform windowing crate, built for performance."
+documentation = "https://docs.rs/ramen"
+# readme = "misc/CRATES-IO.md"
+homepage = "https://github.com/viriuwu/ramen"
+repository = "https://github.com/viriuwu/ramen"
+# license = "..."
+keywords = ["gamedev", "graphics", "windowing"]
+categories = ["api-bindings", "game-development", "game-engines", "gui"]
+# build = ...
+# include = ["/src", "LICENCE.org", "README.org"]
+
+[dependencies]
