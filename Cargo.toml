@@ -9,10 +9,10 @@ documentation = "https://docs.rs/ramen"
 # readme = "misc/CRATES-IO.md"
 homepage = "https://github.com/viriuwu/ramen"
 repository = "https://github.com/viriuwu/ramen"
-# license = "..."
+license = "Zlib"
 keywords = ["gamedev", "graphics", "windowing"]
 categories = ["api-bindings", "game-development", "game-engines", "gui"]
 # build = ...
-# include = ["/src", "LICENCE.org", "README.org"]
+include = ["/src", "LICENCE.org", "README.org"]
 
 [dependencies]
