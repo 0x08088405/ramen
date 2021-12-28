@@ -15,4 +15,11 @@ categories = ["api-bindings", "game-development", "game-engines", "gui"]
 # build = ...
 include = ["/src", "LICENCE.org", "README.org"]
 
+[package.metadata.docs.rs]
+features = ["nightly-rustdoc"]
+targets = ["x86_64-unknown-linux-gnu"]
+
 [dependencies]
+
+[features]
+nightly-rustdoc = []
