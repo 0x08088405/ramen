@@ -1,13 +1,13 @@
+use crate::platform::imp;
+
 /// Represents an open window. Dropping it closes the window.
 ///
 /// To instantiate windows, use a [`builder`](Self::builder).
-pub struct Window {
-
-}
+pub struct Window(imp::Window);
 
 impl Window {
     pub const fn builder() -> WindowBuilder {
-        WindowBuilder::new()
+        WindowBuilder { visible: true }
     }
 }
 
@@ -16,14 +16,8 @@ pub struct WindowBuilder {
 }
 
 impl WindowBuilder {
-    const fn new() -> Self {
-        Self {
-            visible: true,
-        }
-    }
-
     pub fn build(&self) -> Result<Window, ()> {
-        todo!()
+        imp::Window::new(self).map(Window)
     }
 
     /// Sets whether the window is initially visible.
@@ -37,6 +31,6 @@ impl WindowBuilder {
 
 impl Default for WindowBuilder {
     fn default() -> Self {
-        Self::new()
+        Window::builder()
     }
 }
