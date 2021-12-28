@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "nightly-rustdoc", feature(doc_cfg))]
+
 #![warn(unreachable_pub, unused_import_braces)]
 #![deny(unused_results)]
 
