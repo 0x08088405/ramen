@@ -1,6 +1,7 @@
 #![warn(unreachable_pub, unused_import_braces)]
 #![deny(unused_results)]
 
+pub mod platform;
 pub mod window;
 
 #[cfg(test)]
