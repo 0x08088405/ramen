@@ -4,7 +4,7 @@ use super::ffi::*;
 pub(crate) struct Window;
 
 impl Window {
-    pub(crate) fn new(builder: &window::WindowBuilder) -> Result<Self, ()> {
+    pub(crate) fn new(builder: &window::Builder) -> Result<Self, ()> {
         todo!()
     }
 }
