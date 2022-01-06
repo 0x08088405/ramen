@@ -406,9 +406,13 @@ extern "system" {
     ) -> HANDLE;
 
     // Class/window storage manipulation
+    #[cfg(target_pointer_width = "32")]
     pub(crate) fn GetClassLongW(hWnd: HWND, nIndex: c_int) -> DWORD;
+    #[cfg(target_pointer_width = "32")]
     pub(crate) fn SetClassLongW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG) -> DWORD;
+    #[cfg(target_pointer_width = "32")]
     pub(crate) fn GetWindowLongW(hWnd: HWND, nIndex: c_int) -> LONG;
+    #[cfg(target_pointer_width = "32")]
     pub(crate) fn SetWindowLongW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG) -> LONG;
     #[cfg(target_pointer_width = "64")]
     pub(crate) fn GetClassLongPtrW(hWnd: HWND, nIndex: c_int) -> ULONG_PTR;
@@ -418,4 +422,54 @@ extern "system" {
     pub(crate) fn GetWindowLongPtrW(hWnd: HWND, nIndex: c_int) -> LONG_PTR;
     #[cfg(target_pointer_width = "64")]
     pub(crate) fn SetWindowLongPtrW(hWnd: HWND, nIndex: c_int, dwNewLong: LONG_PTR) -> LONG_PTR;
+}
+
+// Wrapper for the API that manipulates window class and instance storage.
+//
+// History lesson: `SetClassLongW` and friends all took `LONG`, a 32-bit type.
+// Only, when Micro$oft upgraded from 32 to 64 bit, they realised pointers needed to fit into them.
+// They added a new set of functions, `LongPtr` taking `LONG_PTR`, but *only available for 64-bit*.
+// Their solution for using those functions on 32-bit was to define C preprocessor macros, like so:
+// #define SetClassLongPtrW SetClassLongW
+// The problem is that the signatures are incompatible in a language with a good integer type system.
+// These functions wrap both function sets to `usize`, which lines up with the intended sizes.
+#[cfg(target_pointer_width = "32")]
+#[inline]
+pub(crate) unsafe fn class_storage(hwnd: HWND, offset: c_int) -> usize {
+    GetClassLongW(hwnd, offset) as usize
+}
+#[cfg(target_pointer_width = "64")]
+#[inline]
+pub(crate) unsafe fn class_storage(hwnd: HWND, offset: c_int) -> usize {
+    GetClassLongPtrW(hwnd, offset) as usize
+}
+#[cfg(target_pointer_width = "32")]
+#[inline]
+pub(crate) unsafe fn set_class_storage(hwnd: HWND, offset: c_int, data: usize) -> usize {
+    SetClassLongW(hwnd, offset, data as LONG) as usize
+}
+#[cfg(target_pointer_width = "64")]
+#[inline]
+pub(crate) unsafe fn set_class_storage(hwnd: HWND, offset: c_int, data: usize) -> usize {
+    SetClassLongPtrW(hwnd, offset, data as LONG_PTR) as usize
+}
+#[cfg(target_pointer_width = "32")]
+#[inline]
+pub(crate) unsafe fn instance_storage(hwnd: HWND, offset: c_int) -> usize {
+    GetWindowLongW(hwnd, offset) as usize
+}
+#[cfg(target_pointer_width = "64")]
+#[inline]
+pub(crate) unsafe fn instance_storage(hwnd: HWND, offset: c_int) -> usize {
+    GetWindowLongPtrW(hwnd, offset) as usize
+}
+#[cfg(target_pointer_width = "32")]
+#[inline]
+pub(crate) unsafe fn set_instance_storage(hwnd: HWND, offset: c_int, data: usize) -> usize {
+    SetWindowLongW(hwnd, offset, data as LONG) as usize
+}
+#[cfg(target_pointer_width = "64")]
+#[inline]
+pub(crate) unsafe fn set_instance_storage(hwnd: HWND, offset: c_int, data: usize) -> usize {
+    SetWindowLongPtrW(hwnd, offset, data as LONG_PTR) as usize
 }
