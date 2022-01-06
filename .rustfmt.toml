@@ -1,9 +1,10 @@
 # rustfmt stable is not actually usable
 # so, format with: cargo +nightly fmt
+unstable_features = true
 
 edition = "2021"
-max_width = 120
 version = "Two"
+max_width = 120
 
 binop_separator = "Back"
 brace_style = "SameLineWhere"
@@ -16,4 +17,4 @@ newline_style = "Unix"
 reorder_impl_items = true
 reorder_imports = true
 trailing_semicolon = false
-unstable_features = true
+use_small_heuristics = "Off"
