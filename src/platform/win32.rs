@@ -1,12 +1,12 @@
 mod ffi;
 mod imp;
-mod util;
+
+// TODO general notes here about A|W functions and Ex performance penalty
 
 // public re-exports
 pub use self::{
     ffi::{HINSTANCE, HWND, WNDPROC},
-    imp::window_proc,
-    util::base_hinstance,
+    imp::{base_hinstance, window_proc},
 };
 
 // internals
