@@ -1,9 +1,9 @@
 #![cfg_attr(feature = "nightly-rustdoc", feature(doc_cfg))]
-
 #![warn(unreachable_pub, unused_import_braces)]
 #![deny(unused_results)]
 
 pub mod platform;
+pub(crate) mod sync;
 pub mod window;
 
 #[cfg(test)]
