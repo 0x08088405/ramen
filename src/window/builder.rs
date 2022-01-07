@@ -1,5 +1,5 @@
-use crate::platform::imp;
 use super::{Controls, Style};
+use crate::{error::Error, platform::imp};
 
 use std::borrow::Cow;
 
@@ -25,7 +25,7 @@ impl Builder {
         }
     }
 
-    pub fn build(&self) -> Result<super::Window, ()> {
+    pub fn build(&self) -> Result<super::Window, Error> {
         imp::Window::new(self).map(super::Window)
     }
 

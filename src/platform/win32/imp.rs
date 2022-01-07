@@ -3,6 +3,7 @@
 use super::ffi::*;
 
 use crate::{
+    error::Error,
     sync::{cvar_notify_one, cvar_wait, mutex_lock, Condvar, Mutex},
     window,
 };
@@ -121,7 +122,7 @@ pub(crate) struct Window {
 unsafe impl Send for Window {}
 unsafe impl Sync for Window {}
 
-unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
+unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
     // A window class describes the default state of a window, more or less.
     // It needs to be registered to the system-global table if it has not been.
     let mut class = mem::MaybeUninit::<WNDCLASSEXW>::uninit();
@@ -132,8 +133,8 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
     // There is a handle system (ATOMs), but you can't do a reverse lookup with the string.
     // For more info, read up on Windows's Atom Tables. Class names are in the User Atom Table.
     let mut class_name_wstr = Vec::<WCHAR>::new();
-    let class_name = str_to_wstr(&*builder.class_name, class_name_wstr.as_mut()).unwrap();
-    // TODO handle OOM here ^
+    let class_name = str_to_wstr(&*builder.class_name, class_name_wstr.as_mut())
+        .ok_or(Error::OutOfMemory)?;
 
     // Check if it's been registered by trying to query information about the class.
     // If it hasn't been, fill in the info and register it.
@@ -163,19 +164,17 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
         // Unlike what most libraries think, this is fallible, even if the input is valid.
         // It's quite trivial to fill up the (system-global) User Atom Table (2^16-1 entries) and OOM.
         if RegisterClassExW(class) == 0 {
-            // TODO handle OOM
-            panic!("Failed to register window class");
+            return Err(Error::SystemResources);
         }
     }
 
     let mut title_wstr = Vec::new();
-    let _ = str_to_wstr(&*builder.title, &mut title_wstr).expect("TODO");
-    // TODO allocation failure
+    let _ = str_to_wstr(&*builder.title, &mut title_wstr).ok_or(Error::OutOfMemory)?;
 
     let style = builder.style;
 
     // Mechanism thingy
-    let recv = Arc::new((Condvar::new(), Mutex::<Option<Result<Window, ()>>>::new(None)));
+    let recv = Arc::new((Condvar::new(), Mutex::new(None)));
     let send = Arc::clone(&recv);
 
     // Time to create the window thread!
@@ -206,6 +205,8 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
             base_hinstance(),
             ptr::null_mut(), // param
         );
+        assert!(!hwnd.is_null());
+        // TODO handle this ^
 
         let (cvar, mutex) = &*send;
         let mut lock = mutex_lock(&mutex);
@@ -237,7 +238,7 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
         }
 
         let _ = UnhookWindowsHookEx(cbt_hook);
-    }).expect("failed to create thread"); // TODO systemresources
+    }).map_err(|_| Error::SystemResources)?;
 
     // wait until thread gives us a result, yield value
     let (cvar, mutex) = &*recv;
@@ -252,7 +253,7 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
 }
 
 impl Window {
-    pub(crate) fn new(builder: &window::Builder) -> Result<Self, ()> {
+    pub(crate) fn new(builder: &window::Builder) -> Result<Self, Error> {
         unsafe { make_window(builder) }
     }
 }
