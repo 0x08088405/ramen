@@ -2,6 +2,7 @@
 #![warn(unreachable_pub, unused_import_braces)]
 #![deny(unused_results)]
 
+pub mod error;
 pub mod platform;
 pub(crate) mod sync;
 pub mod window;
