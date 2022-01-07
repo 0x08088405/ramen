@@ -21,7 +21,6 @@
 // Don't you dare forget...
 
 // C Typedefs
-#[rustfmt::skip]
 pub(crate) use std::os::raw::{
     c_void,
     c_uchar, c_char,

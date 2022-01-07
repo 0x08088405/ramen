@@ -58,6 +58,58 @@ fn str_to_wstr(src: &str, buffer: &mut Vec<WCHAR>) -> Option<*const WCHAR> {
     }
 }
 
+/// Turns a `Style` into a dwStyle and dwExStyle.
+/// This does not include the close button, see `set_close_button`.
+fn style_to_bits(style: &window::Style) -> (DWORD, DWORD) {
+    let window::Style {
+        borderless,
+        controls,
+        resizable,
+        right_to_left,
+        visible,
+    } = *style;
+
+    let (mut style, mut style_ex) = (0, 0);
+
+    // TODO Why does this need THICKFRAME to work? Very strange.
+    if borderless {
+        style |= WS_POPUP | WS_THICKFRAME;
+    } else {
+        style |= WS_OVERLAPPED | WS_BORDER | WS_CAPTION;
+    }
+    if let Some(controls) = controls {
+        if controls.minimise {
+            style |= WS_MINIMIZEBOX;
+        }
+        if controls.maximise {
+            style |= WS_MAXIMIZEBOX;
+        }
+        style |= WS_SYSMENU;
+    }
+    if resizable {
+        style |= WS_THICKFRAME;
+    }
+    if right_to_left {
+        style_ex |= WS_EX_LAYOUTRTL;
+    }
+    if visible {
+        style |= WS_VISIBLE;
+    }
+
+    (style, style_ex)
+}
+
+/// Due to legacy reasons, the close button is a system menu item and not a window style.
+unsafe fn set_close_button(hwnd: HWND, enabled: bool) {
+    let menu: HMENU = GetSystemMenu(hwnd, FALSE);
+    let flag = if enabled {
+        MF_BYCOMMAND | MF_ENABLED
+    } else {
+        MF_BYCOMMAND | MF_DISABLED | MF_GRAYED
+    };
+    let _ = EnableMenuItem(menu, SC_CLOSE as UINT, flag);
+}
+
 pub(crate) struct Window;
 
 unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
@@ -111,9 +163,12 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
     let _ = str_to_wstr(&*builder.title, &mut title_wstr).expect("TODO");
     // TODO allocation failure
 
+    let style = builder.style;
+
     // Time to create the window thread!
     let thread = thread::Builder::new().spawn(move || {
         let class_name = class_name_wstr;
+        let style = style;
         let title = title_wstr;
 
         // Attach the CBT hook for the current thread
@@ -121,15 +176,13 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
         let cbt_hook = SetWindowsHookExW(WH_CBT, cbt_hookproc, ptr::null_mut(), thread_id);
         assert!(!cbt_hook.is_null()); // TODO
 
-        let style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
-        let style_ex = 0;
+        let (dw_style, dw_style_ex) = style_to_bits(&style);
 
-        #[rustfmt::skip]
         let hwnd = CreateWindowExW(
-            style_ex,
+            dw_style_ex,
             if class_name.is_empty() { [0].as_ptr() } else { class_name.as_ptr() },
             if title.is_empty() { [0].as_ptr() } else { title.as_ptr() },
-            style,
+            dw_style,
             400, // x
             400, // y
             800, // w (nc)
@@ -139,6 +192,9 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
             base_hinstance(),
             ptr::null_mut(), // param
         );
+
+        // This is considered a menu item, so it has to be updated after creating the window.
+        set_close_button(hwnd, style.controls.as_ref().map(|x| x.close).unwrap_or(false));
 
         // Run message loop until error or exit
         let mut msg = mem::MaybeUninit::zeroed().assume_init();
