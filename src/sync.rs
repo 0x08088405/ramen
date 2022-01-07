@@ -5,7 +5,7 @@ pub(crate) use self::imp::{cvar_notify_one, cvar_wait, mutex_lock, Condvar, Mute
 #[cfg(not(feature = "parking-lot"))]
 pub(crate) mod imp {
     use std::ptr;
-    pub use std::sync::{Condvar, Mutex, MutexGuard};
+    pub(crate) use std::sync::{Condvar, Mutex, MutexGuard};
 
     #[inline]
     pub(crate) fn cvar_notify_one(cvar: &Condvar) {
@@ -29,7 +29,7 @@ pub(crate) mod imp {
 
 #[cfg(feature = "parking-lot")]
 pub(crate) mod imp {
-    pub use parking_lot::{Condvar, Mutex, MutexGuard};
+    pub(crate) use parking_lot::{Condvar, Mutex, MutexGuard};
 
     #[inline]
     pub(crate) fn cvar_notify_one(cvar: &Condvar) {
