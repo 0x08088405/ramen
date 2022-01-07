@@ -1,2 +1,8 @@
-/target
+# local testing
+/src/bin/
+
+# cargo build artifacts
+/target/
+
+# cargo version lock (shouldn't be committed for libraries)
 Cargo.lock
