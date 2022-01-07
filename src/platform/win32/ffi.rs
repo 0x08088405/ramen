@@ -405,7 +405,7 @@ extern "system" {
         fuLoad: UINT,
     ) -> HANDLE;
 
-    // Class/window storage manipulation
+    // Class/instance storage manipulation
     #[cfg(target_pointer_width = "32")]
     pub(crate) fn GetClassLongW(hWnd: HWND, nIndex: c_int) -> DWORD;
     #[cfg(target_pointer_width = "32")]
