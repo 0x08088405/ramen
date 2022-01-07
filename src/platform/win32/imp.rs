@@ -1,9 +1,13 @@
 //! TODO explain rationale behind creating a thread for this
 
 use super::ffi::*;
-use crate::window;
 
-use std::{mem, ptr, thread};
+use crate::{
+    sync::{cvar_notify_one, cvar_wait, mutex_lock, Condvar, Mutex},
+    window,
+};
+
+use std::{mem, ptr, sync::Arc, thread};
 
 /// Marker for identifying windows instantiated by ramen.
 /// This is necessary because some software likes to inject windows on your thread that you didn't create.
@@ -110,7 +114,12 @@ unsafe fn set_close_button(hwnd: HWND, enabled: bool) {
     let _ = EnableMenuItem(menu, SC_CLOSE as UINT, flag);
 }
 
-pub(crate) struct Window;
+pub(crate) struct Window {
+    hwnd: HWND,
+    thread: Option<thread::JoinHandle<()>>,
+}
+unsafe impl Send for Window {}
+unsafe impl Sync for Window {}
 
 unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
     // A window class describes the default state of a window, more or less.
@@ -165,9 +174,14 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
 
     let style = builder.style;
 
+    // Mechanism thingy
+    let recv = Arc::new((Condvar::new(), Mutex::<Option<Result<Window, ()>>>::new(None)));
+    let send = Arc::clone(&recv);
+
     // Time to create the window thread!
     let thread = thread::Builder::new().spawn(move || {
         let class_name = class_name_wstr;
+        let send = send;
         let style = style;
         let title = title_wstr;
 
@@ -193,6 +207,15 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
             ptr::null_mut(), // param
         );
 
+        let (cvar, mutex) = &*send;
+        let mut lock = mutex_lock(&mutex);
+        *lock = Some(Ok(Window {
+            hwnd,
+            thread: None,
+        }));
+        cvar_notify_one(&cvar);
+        mem::drop(lock);
+
         // This is considered a menu item, so it has to be updated after creating the window.
         set_close_button(hwnd, style.controls.as_ref().map(|x| x.close).unwrap_or(false));
 
@@ -214,24 +237,23 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, ()> {
         }
 
         let _ = UnhookWindowsHookEx(cbt_hook);
-    });
+    }).expect("failed to create thread"); // TODO systemresources
 
-    match thread {
-        Ok(handle) => {},
-        Err(err) => {},
-    };
-
-    let _ = thread::sleep_ms(60 * 1000);
-
-    // TODO document class unregistering
-
-    todo!()
+    // wait until thread gives us a result, yield value
+    let (cvar, mutex) = &*recv;
+    let mut lock = mutex_lock(&mutex);
+    loop {
+        if let Some(result) = (&mut *lock).take() {
+            break result.map(|window| Window { thread: Some(thread), ..window })
+        } else {
+            cvar_wait(&cvar, &mut lock);
+        }
+    }
 }
 
 impl Window {
     pub(crate) fn new(builder: &window::Builder) -> Result<Self, ()> {
-        let _ = unsafe { make_window(builder) };
-        todo!()
+        unsafe { make_window(builder) }
     }
 }
 
@@ -265,5 +287,42 @@ unsafe extern "system" fn cbt_hookproc(code: c_int, wparam: WPARAM, lparam: LPAR
 }
 
 pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    DefWindowProcW(hwnd, msg, wparam, lparam)
+    // Fantastic resource for a comprehensive list of window messages:
+    // https://wiki.winehq.org/List_Of_Windows_Messages
+    match msg {
+        // No-op event, usable for pinging the event loop, stubbing, etc. Returns 0.
+        WM_NULL => 0,
+
+        // Received after the client area has been created, but before the window is made visible.
+        // This event comes after `WM_NCCREATE`, the event sent after the non-client area is created.
+        // wParam: Unused, ignore.
+        // lParam: `CREATESTRUCTW *` (in)
+        // Return 0 to succeed `CreateWindowExW`, or -1 to destroy the window and return NULL.
+        // See also: `WM_NCCREATE`
+        WM_CREATE => 0,
+
+        // Received as the client area is being destroyed.
+        // This event is received, then `WM_NCDESTROY`, and the window is gone after that.
+        // Nothing can actually be done once this message is received, and you always return 0.
+        WM_DESTROY => {
+            // However, to uphold the invariant that as long as there's a `Window` there really is one,
+            // we make sure this message was received due to the window being dropped,
+            // and not from a silly third party program sneaking a message in there.
+
+            // TODO: graceful closing here...
+            PostQuitMessage(0);
+
+            0
+        },
+
+        // TODO
+        WM_MOVE => DefWindowProcW(hwnd, msg, wparam, lparam),
+
+        // << Event 0x0004 is not known to exist. >>
+
+        // TODO
+        WM_SIZE => DefWindowProcW(hwnd, msg, wparam, lparam),
+
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+    }
 }
