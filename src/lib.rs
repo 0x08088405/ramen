@@ -10,8 +10,13 @@ pub mod window;
 #[cfg(test)]
 mod tests {
     #[test]
-    fn it_works() {
-        let result = 9 + 10;
-        assert_ne!(result, 21);
+    fn has_send_sync() {
+        fn test<T: Send + Sync>() {}
+
+        test::<crate::error::Error>();
+        test::<crate::window::Builder>();
+        test::<crate::window::Controls>();
+        test::<crate::window::Style>();
+        test::<crate::window::Window>();
     }
 }
