@@ -4,6 +4,7 @@
 
 pub mod error;
 pub mod event;
+pub mod input;
 pub mod platform;
 pub(crate) mod util;
 pub mod window;
