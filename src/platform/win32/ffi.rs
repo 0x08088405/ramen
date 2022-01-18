@@ -1,4 +1,4 @@
-#![allow(nonstandard_style, overflowing_literals)]
+#![allow(clippy::upper_case_acronyms, nonstandard_style, overflowing_literals)]
 // TODO
 // THIS NEEDS TO BE REMOVED BEFORE RELEASE
 // THIS NEEDS TO BE REMOVED BEFORE RELEASE

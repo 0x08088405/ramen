@@ -1,5 +1,7 @@
 //! TODO explain rationale behind creating a thread for this
 
+#![allow(clippy::mutex_atomic)]
+
 use super::ffi::*;
 
 use crate::{
@@ -247,13 +249,13 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
         // TODO handle this ^
 
         let (cvar, mutex) = &*send;
-        let mut lock = sync::mutex_lock(&mutex);
+        let mut lock = sync::mutex_lock(mutex);
         *lock = Some(Ok(Window {
             hwnd,
             state: window_state.get(),
             thread: None,
         }));
-        sync::cvar_notify_one(&cvar);
+        sync::cvar_notify_one(cvar);
         mem::drop(lock);
 
         // This is considered a menu item, so it has to be updated after creating the window.
@@ -282,7 +284,7 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
 
     // wait until thread gives us a result, yield value
     let (cvar, mutex) = &*recv;
-    let mut lock = sync::mutex_lock(&mutex);
+    let mut lock = sync::mutex_lock(mutex);
     loop {
         if let Some(result) = (&mut *lock).take() {
             break result.map(|mut window| {
@@ -290,7 +292,7 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
                 window
             })
         } else {
-            sync::cvar_wait(&cvar, &mut lock);
+            sync::cvar_wait(cvar, &mut lock);
         }
     }
 }
@@ -303,7 +305,7 @@ impl Window {
     pub(crate) fn events(&self) -> &[Event] {
         unsafe {
             // safety: `poll_events`'s signature invalidates this reference
-            (&*self.state).event_frontbuf.as_slice()
+            (*self.state).event_frontbuf.as_slice()
         }
     }
 
@@ -314,7 +316,7 @@ impl Window {
             let mut is_blocking = sync::mutex_lock(mutex);
             if *is_blocking {
                 *is_blocking = false;
-                sync::cvar_notify_one(&cvar);
+                sync::cvar_notify_one(cvar);
             }
 
             let mut qpc_counter = 0;
@@ -344,7 +346,7 @@ impl WindowState {
         loop {
             if *is_blocking || timed_out || self.event_backbuf._try_push(event).is_err() {
                 *is_blocking = true;
-                sync::cvar_wait(&cvar, &mut is_blocking);
+                sync::cvar_wait(cvar, &mut is_blocking);
             } else {
                 break
             }
@@ -372,7 +374,7 @@ unsafe extern "system" fn cbt_hookproc(code: c_int, wparam: WPARAM, lparam: LPAR
             let hwnd = wparam as HWND;
             if is_ramen_window(hwnd) {
                 // 0 - allow, 1 - forbid (hence !)
-                (!(&*user_state(hwnd)).destroy.load(atomic::Ordering::Acquire)) as LRESULT
+                (!(*user_state(hwnd)).destroy.load(atomic::Ordering::Acquire)) as LRESULT
             } else {
                 CallNextHookEx(ptr::null_mut(), code, wparam, lparam)
             }
@@ -404,7 +406,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             // However, to uphold the invariant that as long as there's a `Window` there really is one,
             // we make sure this message was received due to the window being dropped,
             // and not from a silly third party program sneaking a message in there.
-            if (&*user_state(hwnd)).destroy.load(atomic::Ordering::Acquire) {
+            if (*user_state(hwnd)).destroy.load(atomic::Ordering::Acquire) {
                 PostQuitMessage(0);
             }
             0
@@ -448,7 +450,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
         // Return 0.
         WM_SYSCOMMAND => {
             if wparam == SC_CLOSE {
-                (&mut *user_state(hwnd)).close_reason = Some(CloseReason::SystemMenu);
+                (*user_state(hwnd)).close_reason = Some(CloseReason::SystemMenu);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
         },
