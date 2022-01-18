@@ -420,6 +420,53 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
         // TODO
         WM_SIZE => DefWindowProcW(hwnd, msg, wparam, lparam),
 
+        // Received when the window is activated or deactivated (focus gain/loss). Return 0.
+        // wParam: HIWORD = non-zero if minimized, LOWORD = WA_ACTIVE | WA_CLICKACTIVE | WA_INACTIVE
+        // lParam: HWND to window being deactivated (if ACTIVE|CLICKATIVE) otherwise the activated one
+        // See also: `WM_ACTIVATEAPP` and `WM_SETFOCUS` & `WM_KILLFOCUS`
+        WM_ACTIVATE => {
+            // Quoting MSDN:
+            // "The high-order word specifies the minimized state of the window being activated
+            // or deactivated. A nonzero value indicates the window is minimized."
+            //
+            // This doesn't work entirely correctly in all situations, as with most of Win32,
+            // so if we don't do some logic here we get two events on unfocusing
+            // by clicking on the taskbar icon for example, among other things:
+            // 1) WM_INACTIVE (HIWORD == 0)
+            // 2) WM_ACTIVATE (HIWORD != 0)
+            // Note that #2 translates to active(focused) & minimized simultaneously.
+            // This would mean the window would be told it's focused after being minimized. Fantastic.
+
+            // These problems could be avoided like this:
+            // match (loword, hiword) {
+            //     (true, true) => return 0,
+            //     (x, _) => {
+            //         if state.is_focused != x {
+            //             state.is_focused = x;
+            //             state.push_event(Event::Focus(x));
+            //         }
+            //     },
+            // }
+            // However, that's a waste of time when you can just process `WM_SETFOCUS` and `WM_KILLFOCUS`.
+
+            0
+        },
+
+        // Received when a window receives keyboard focus. Return 0.
+        // This is mainly intended for textbox controls but works perfectly fine for actual windows.
+        // See also: `WM_ACTIVATE` (to know why this is used for focus events)
+        WM_SETFOCUS => {
+            (*user_state(hwnd)).dispatch_event(Event::Focus(true));
+            0
+        },
+
+        // Received when a window loses keyboard focus. Return 0.
+        // See also: `WM_SETFOCUS` and `WM_ACTIVATE`
+        WM_KILLFOCUS => {
+            (*user_state(hwnd)).dispatch_event(Event::Focus(false));
+            0
+        },
+
         WM_PAINT => {
             // windows will not stop spamming this event until you process it like this
             // we don't actually draw anything, of course

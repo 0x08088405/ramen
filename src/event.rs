@@ -4,6 +4,9 @@ pub enum Event {
     /// A request has been made to close the window.
     /// For more information on why, see the associated [`CloseReason`].
     CloseRequest(CloseReason),
+
+    /// The window focus state has been updated (`true` if focused).
+    Focus(bool),
 }
 
 /// Details the source of [`Event::CloseRequest`].
