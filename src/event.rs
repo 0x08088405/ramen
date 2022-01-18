@@ -1,3 +1,5 @@
+use crate::input::Key;
+
 #[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[non_exhaustive]
 pub enum Event {
@@ -7,6 +9,21 @@ pub enum Event {
 
     /// The window focus state has been updated (`true` if focused).
     Focus(bool),
+
+    /// A [`Key`] was pressed.
+    #[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-docs"), cfg(feature = "input"))]
+    KeyboardDown(Key),
+
+    /// A [`Key`] was auto-repeated by the system.
+    #[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-docs"), cfg(feature = "input"))]
+    KeyboardRepeat(Key),
+
+    /// A [`Key`] was released.
+    #[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-docs"), cfg(feature = "input"))]
+    KeyboardUp(Key),
 }
 
 /// Details the source of [`Event::CloseRequest`].

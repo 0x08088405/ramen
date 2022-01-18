@@ -7,6 +7,7 @@ use super::ffi::*;
 use crate::{
     error::Error,
     event::{CloseReason, Event},
+    input::Key,
     util::{TryPush, sync::{self, Condvar, Mutex}},
     window,
 };
@@ -365,6 +366,301 @@ unsafe fn user_state(hwnd: HWND) -> *mut WindowState {
     instance_storage(hwnd, GWL_USERDATA) as *mut WindowState
 }
 
+#[cfg(feature = "input")]
+fn extend_key(key: Key, lparam: LPARAM) -> Key {
+    let scancode = (lparam & 0x00FF0000) >> 16u8;
+    let extended_bit = (lparam & (1 << 24)) != 0;
+
+    match key {
+        Key::LeftShift if scancode == 54 => Key::RightShift,
+        Key::LeftControl if extended_bit => Key::RightControl,
+        Key::LeftAlt if extended_bit => Key::RightAlt,
+        x => x,
+    }
+}
+
+#[cfg(feature = "input")]
+fn map_tr_state(key: Key, lparam: LPARAM) -> Event {
+    if (lparam & (1 << 31)) == 0 {
+        if (lparam & (1 << 30)) != 0 {
+            Event::KeyboardRepeat(key)
+        } else {
+            Event::KeyboardDown(key)
+        }
+    } else {
+        Event::KeyboardUp(key)
+    }
+}
+
+#[cfg(feature = "input")]
+fn sys_key_event(wparam: WPARAM, lparam: LPARAM) -> Option<Event> {
+    let alt_bit = (lparam & (1 << 29)) != 0;
+    let transition_state = (lparam & (1 << 31)) != 0;
+
+    // If it's not an F10 press, and the alt bit is not set,
+    // and it's not a key release, it is not being sent by a key.
+    if wparam & 0xFF != VK_F10 as WPARAM && !alt_bit && !transition_state {
+        return None
+    }
+
+    let virtual_key = translate_vk(wparam)?;
+    let key = extend_key(virtual_key, lparam);
+
+    Some(map_tr_state(key, lparam))
+}
+
+#[cfg(feature = "input")]
+fn translate_vk(wparam: WPARAM) -> Option<Key> {
+    match (wparam & 0xFF) as u8 {
+        // Undocumented.
+        0x00 => None,
+
+        // These are not keys.
+        VK_LBUTTON | VK_RBUTTON | VK_CANCEL | VK_MBUTTON | VK_XBUTTON1 | VK_XBUTTON2 => None,
+
+        // Undefined.
+        0x07 => None,
+
+        VK_BACK => Some(Key::Backspace),
+        VK_TAB => Some(Key::Tab),
+
+        // Reserved.
+        0x0A..=0x0B => None,
+
+        VK_CLEAR => Some(Key::Clear),
+        VK_RETURN => Some(Key::Return),
+
+        // Undefined.
+        0x0E..=0x0F => None,
+
+        VK_SHIFT => Some(Key::LeftShift),
+        VK_CONTROL => Some(Key::LeftControl),
+        VK_MENU => Some(Key::LeftAlt),
+        VK_PAUSE => Some(Key::Pause),
+        VK_CAPITAL => Some(Key::CapsLock),
+        VK_KANA => Some(Key::ImeKanaOrHangul),
+        VK_IME_ON => Some(Key::ImeOn),
+        VK_JUNJA => Some(Key::ImeJunja),
+        VK_FINAL => Some(Key::ImeFinal),
+        VK_KANJI => Some(Key::ImeHanjaOrKanji),
+        VK_IME_OFF => Some(Key::ImeOff),
+        VK_ESCAPE => Some(Key::Escape),
+        VK_CONVERT => Some(Key::ImeConvert),
+        VK_NONCONVERT => Some(Key::ImeNonConvert),
+        VK_ACCEPT => Some(Key::ImeAccept),
+        VK_MODECHANGE => Some(Key::ImeModeChangeRequest),
+        VK_SPACE => Some(Key::Space),
+        VK_PRIOR => Some(Key::PageUp),
+        VK_NEXT => Some(Key::PageDown),
+        VK_END => Some(Key::End),
+        VK_HOME => Some(Key::Home),
+        VK_LEFT => Some(Key::LeftArrow),
+        VK_UP => Some(Key::UpArrow),
+        VK_RIGHT => Some(Key::RightArrow),
+        VK_DOWN => Some(Key::DownArrow),
+        VK_SELECT => Some(Key::Select),
+        VK_PRINT => Some(Key::Print),
+        VK_EXECUTE => Some(Key::Execute),
+        VK_SNAPSHOT => Some(Key::PrintScreen), // this one's going in my cringe compilation
+        VK_INSERT => Some(Key::Insert),
+        VK_DELETE => Some(Key::Delete),
+        VK_HELP => Some(Key::Help),
+
+        0x30 => Some(Key::Alpha0),
+        0x31 => Some(Key::Alpha1),
+        0x32 => Some(Key::Alpha2),
+        0x33 => Some(Key::Alpha3),
+        0x34 => Some(Key::Alpha4),
+        0x35 => Some(Key::Alpha5),
+        0x36 => Some(Key::Alpha6),
+        0x37 => Some(Key::Alpha7),
+        0x38 => Some(Key::Alpha8),
+        0x39 => Some(Key::Alpha9),
+
+        // Undefined.
+        0x3A..=0x40 => None,
+
+        0x41 => Some(Key::A),
+        0x42 => Some(Key::B),
+        0x43 => Some(Key::C),
+        0x44 => Some(Key::D),
+        0x45 => Some(Key::E),
+        0x46 => Some(Key::F),
+        0x47 => Some(Key::G),
+        0x48 => Some(Key::H),
+        0x49 => Some(Key::I),
+        0x4A => Some(Key::J),
+        0x4B => Some(Key::K),
+        0x4C => Some(Key::L),
+        0x4D => Some(Key::M),
+        0x4E => Some(Key::N),
+        0x4F => Some(Key::O),
+        0x50 => Some(Key::P),
+        0x51 => Some(Key::Q),
+        0x52 => Some(Key::R),
+        0x53 => Some(Key::S),
+        0x54 => Some(Key::T),
+        0x55 => Some(Key::U),
+        0x56 => Some(Key::V),
+        0x57 => Some(Key::W),
+        0x58 => Some(Key::X),
+        0x59 => Some(Key::Y),
+        0x5A => Some(Key::Z),
+
+        VK_LWIN => Some(Key::LeftSuper),
+        VK_RWIN => Some(Key::RightSuper),
+        VK_APPS => Some(Key::Applications),
+
+        // Reserved.
+        0x5E => None,
+
+        VK_SLEEP => Some(Key::Sleep),
+
+        VK_NUMPAD0 => Some(Key::Keypad0),
+        VK_NUMPAD1 => Some(Key::Keypad1),
+        VK_NUMPAD2 => Some(Key::Keypad2),
+        VK_NUMPAD3 => Some(Key::Keypad3),
+        VK_NUMPAD4 => Some(Key::Keypad4),
+        VK_NUMPAD5 => Some(Key::Keypad5),
+        VK_NUMPAD6 => Some(Key::Keypad6),
+        VK_NUMPAD7 => Some(Key::Keypad7),
+        VK_NUMPAD8 => Some(Key::Keypad8),
+        VK_NUMPAD9 => Some(Key::Keypad9),
+
+        VK_MULTIPLY => Some(Key::KeypadMultiply),
+        VK_ADD => Some(Key::KeypadAdd),
+        VK_SEPARATOR => Some(Key::KeypadSeparator), // TODO: document this nightmare
+        VK_SUBTRACT => Some(Key::KeypadSubtract),
+        VK_DECIMAL => Some(Key::KeypadDecimal),
+        VK_DIVIDE => Some(Key::KeypadDivide),
+
+        VK_F1 => Some(Key::F1),
+        VK_F2 => Some(Key::F2),
+        VK_F3 => Some(Key::F3),
+        VK_F4 => Some(Key::F4),
+        VK_F5 => Some(Key::F5),
+        VK_F6 => Some(Key::F6),
+        VK_F7 => Some(Key::F7),
+        VK_F8 => Some(Key::F8),
+        VK_F9 => Some(Key::F9),
+        VK_F10 => Some(Key::F10),
+        VK_F11 => Some(Key::F11),
+        VK_F12 => Some(Key::F12),
+        VK_F13 => Some(Key::F13),
+        VK_F14 => Some(Key::F14),
+        VK_F15 => Some(Key::F15),
+        VK_F16 => Some(Key::F16),
+        VK_F17 => Some(Key::F17),
+        VK_F18 => Some(Key::F18),
+        VK_F19 => Some(Key::F19),
+        VK_F20 => Some(Key::F20),
+        VK_F21 => Some(Key::F21),
+        VK_F22 => Some(Key::F22),
+        VK_F23 => Some(Key::F23),
+        VK_F24 => Some(Key::F24),
+
+        // Unassigned.
+        0x88..=0x8F => None,
+
+        VK_NUMLOCK => Some(Key::NumLock),
+        VK_SCROLL => Some(Key::ScrollLock),
+
+        // OEM Specific. TODO, perhaps.
+        0x92..=0x96 => None,
+
+        // Unassigned.
+        0x97..=0x9F => None,
+
+        // These values are only recognized by GetAsyncKeyState and related,
+        // but I'll add them for completion regardless.
+        VK_LSHIFT => Some(Key::LeftShift),
+        VK_RSHIFT => Some(Key::RightShift),
+        VK_LCONTROL => Some(Key::LeftControl),
+        VK_RCONTROL => Some(Key::RightControl),
+        VK_LMENU => Some(Key::LeftAlt),
+        VK_RMENU => Some(Key::RightAlt),
+
+        VK_BROWSER_BACK => Some(Key::BrowserBack),
+        VK_BROWSER_FORWARD => Some(Key::BrowserForward),
+        VK_BROWSER_REFRESH => Some(Key::BrowserRefresh),
+        VK_BROWSER_STOP => Some(Key::BrowserStop),
+        VK_BROWSER_SEARCH => Some(Key::BrowserSearch),
+        VK_BROWSER_FAVORITES => Some(Key::BrowserFavourites),
+        VK_BROWSER_HOME => Some(Key::BrowserHome),
+        VK_VOLUME_MUTE => Some(Key::MediaVolumeMute),
+        VK_VOLUME_DOWN => Some(Key::MediaVolumeDown),
+        VK_VOLUME_UP => Some(Key::MediaVolumeUp),
+        VK_MEDIA_NEXT_TRACK => Some(Key::MediaNextTrack),
+        VK_MEDIA_PREV_TRACK => Some(Key::MediaPreviousTrack),
+        VK_MEDIA_STOP => Some(Key::MediaStop),
+        VK_MEDIA_PLAY_PAUSE => Some(Key::MediaPlayPause),
+        VK_LAUNCH_MAIL => Some(Key::LaunchMail),
+        VK_LAUNCH_MEDIA_SELECT => Some(Key::LaunchMediaSelect),
+        VK_LAUNCH_APP1 => Some(Key::LaunchApplication1),
+        VK_LAUNCH_APP2 => Some(Key::LaunchApplication2),
+
+        // Reserved.
+        0xB8..=0xB9 => None,
+
+        VK_OEM_1 => Some(Key::Oem1),
+        VK_OEM_PLUS => Some(Key::OemPlus),
+        VK_OEM_COMMA => Some(Key::OemComma),
+        VK_OEM_MINUS => Some(Key::OemMinus),
+        VK_OEM_PERIOD => Some(Key::OemPeriod),
+        VK_OEM_2 => Some(Key::Oem2),
+        VK_OEM_3 => Some(Key::Oem3),
+
+        // Reserved (VK_GAMEPAD_xxx).
+        0xC1..=0xDA => None,
+
+        VK_OEM_4 => Some(Key::Oem4),
+        VK_OEM_5 => Some(Key::Oem5),
+        VK_OEM_6 => Some(Key::Oem6),
+        VK_OEM_7 => Some(Key::Oem7),
+        VK_OEM_8 => Some(Key::Oem8),
+
+        // Reserved.
+        0xE0 => None,
+
+        // TODO: "OEM Specific"
+        0xE1 => None,
+
+        VK_OEM_102 => Some(Key::Oem102),
+
+        // TODO: "OEM Specific"
+        0xE3..=0xE4 => None,
+
+        VK_PROCESSKEY => Some(Key::ImeProcess),
+
+        // TODO: "OEM Specific"
+        0xE6 => None,
+
+        VK_PACKET => None, // TODO
+
+        // Unassigned.
+        0xE8 => None,
+
+        // TODO: "OEM Specific"
+        0xE9..=0xF5 => None,
+
+        VK_ATTN => Some(Key::Attn),
+        VK_CRSEL => Some(Key::CrSel),
+        VK_EXSEL => Some(Key::ExSel),
+        VK_EREOF => Some(Key::EraseEof),
+        VK_PLAY => Some(Key::Play),
+        VK_ZOOM => Some(Key::Zoom),
+
+        // Reserved.
+        VK_NONAME => None,
+
+        VK_PA1 => Some(Key::Pa1),
+        VK_OEM_CLEAR => Some(Key::OemClear),
+
+        // Undocumented.
+        0xFF => None,
+    }
+}
+
 /// Hook procedure for managing things that other bits of Win32 simply don't provide a way to do
 unsafe extern "system" fn cbt_hookproc(code: c_int, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match code {
@@ -489,6 +785,49 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             let params = &**(lparam as *const *const WindowCreateParams);
             let _ = set_instance_storage(hwnd, GWL_USERDATA, params.state as usize);
             DefWindowProcW(hwnd, msg, wparam, lparam)
+        },
+
+        // Received when a key is pressed or released.
+        // wParam: Virtual key code.
+        // lParam: Giant bitfield. Please just read MSDN (hint: bit 31 means MSB, 0 is LSB).
+        // Return 0.
+        WM_KEYDOWN | WM_KEYUP => {
+            #[cfg(feature = "input")]
+            if let Some(key) = translate_vk(wparam) {
+                (*user_state(hwnd)).dispatch_event(map_tr_state(extend_key(key, lparam), lparam));
+            }
+            0
+        },
+
+        // Same as `WM_KEYDOWN` & `WM_KEYUP` but with a few horrific bitfield quirks.
+        WM_SYSKEYDOWN | WM_SYSKEYUP => {
+            let mut state = &mut *user_state(hwnd);
+
+            // As a side-effect of handling "system keys", we actually override Alt+F4.
+            // It's re-implemented here, because it's usually expected that Alt+F4 does something.
+            if wparam & 0xFF == VK_F4 as WPARAM && lparam & (1 << 29) != 0 {
+                state.close_reason = Some(CloseReason::KeyboardShortcut);
+                let _ = SendMessageW(hwnd, WM_CLOSE, 0, 0);
+            }
+
+            // This is one of the worst parts of the Win32 input event system.
+            // Countless games have bugs and exploits relating to the Alt & F10 keys.
+
+            // To sum it up, the Alt and F10 keys are very special due to historical reasons.
+            // They have their own event if in combination with other keys.
+            // Making it worse, "it also occurs when no window currently has the keyboard focus",
+            // although this isn't actually observable on new OSes so it's just a legacy feature.
+
+            // Bit 29 in lParam is set if the Alt key is down while emitting this message,
+            // which sounds like a reasonable fix to tell apart the two reasons for this message.
+            // Except if it's the Alt key being released, it won't be set! So you must trust wParam.
+            // F10 doesn't even set any bit because there's no F10 bit, so you trust that one too.
+            #[cfg(feature = "input")]
+            if let Some(event) = sys_key_event(wparam, lparam) {
+                state.dispatch_event(event);
+            }
+
+            0
         },
 
         // Received when the user clicks a window menu control (formerly "system menu").
