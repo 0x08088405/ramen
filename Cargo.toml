@@ -19,6 +19,8 @@ include = ["/src", "LICENCE.org", "README.org"]
 parking_lot = { version = "0.11.2", optional = true }
 
 [features]
+default = ["input"]
+input = []
 nightly-rustdoc = []
 parking-lot = ["parking_lot"]
 
