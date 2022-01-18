@@ -5,7 +5,6 @@
 pub mod error;
 pub mod event;
 pub mod platform;
-pub(crate) mod sync;
 pub(crate) mod util;
 pub mod window;
 
