@@ -263,6 +263,15 @@ pub(crate) struct MSG {
     pub(crate) pt: POINT,
 }
 #[repr(C)]
+pub(crate) struct PAINTSTRUCT {
+    hdc: HDC,
+    fErase: BOOL,
+    rcPaint: RECT,
+    fRestore: BOOL,
+    fIncUpdate: BOOL,
+    rgbReserved: [BYTE; 32],
+}
+#[repr(C)]
 pub(crate) struct POINT {
     pub(crate) x: LONG,
     pub(crate) y: LONG,
@@ -297,7 +306,7 @@ pub(crate) struct WNDCLASSEXW {
 }
 
 // Static-linked Functions
-#[link(name = "Kernel32")]
+#[link(name = "kernel32")]
 extern "system" {
     // Global state error code API mess
     pub(crate) fn GetLastError() -> DWORD;
@@ -321,10 +330,14 @@ extern "system" {
     pub(crate) fn GetProcAddress(hModule: HMODULE, lpProcName: *const CHAR) -> FARPROC;
     pub(crate) fn LoadLibraryExW(lpLibFileName: *const WCHAR, hFile: HANDLE, dwFlags: DWORD) -> HMODULE;
 
+    // Note: The kernel treats these `LARGE_INTEGER`s as unsigned
+    pub(crate) fn QueryPerformanceCounter(lpPerformanceCount: *mut u64) -> BOOL;
+    pub(crate) fn QueryPerformanceFrequency(lpPerformanceCount: *mut u64) -> BOOL;
+
     // Operating system version
     pub(crate) fn VerSetConditionMask(ConditionMask: c_ulonglong, TypeMask: DWORD, Condition: BYTE) -> c_ulonglong;
 }
-#[link(name = "User32")]
+#[link(name = "user32")]
 extern "system" {
     // Window class management
     pub(crate) fn GetClassInfoExW(hinst: HINSTANCE, lpszClass: *const WCHAR, lpwcx: *mut WNDCLASSEXW) -> BOOL;
@@ -403,6 +416,8 @@ extern "system" {
         cy: c_int,
         fuLoad: UINT,
     ) -> HANDLE;
+    pub(crate) fn BeginPaint(hWnd: HWND, lpPaint: *mut PAINTSTRUCT) -> HDC;
+    pub(crate) fn EndPaint(hWnd: HWND, lpPaint: *const PAINTSTRUCT) -> BOOL;
 
     // Class/instance storage manipulation
     #[cfg(target_pointer_width = "32")]

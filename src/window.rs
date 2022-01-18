@@ -6,7 +6,7 @@ pub use self::{
     decoration::{Controls, Style},
 };
 
-use crate::platform::imp;
+use crate::{event::Event, platform::imp};
 
 /// Represents an open window. Dropping it closes the window.
 ///
@@ -22,5 +22,13 @@ impl Window {
     /// Similar to [`builder`](Self::builder), but derives the defaults from a given [`Style`].
     pub const fn with_style(style: Style) -> Builder {
         Builder::new(Some(style))
+    }
+
+    pub fn events(&self) -> &[Event] {
+        self.0.events()
+    }
+
+    pub fn poll_events(&mut self) {
+        self.0.poll_events()
     }
 }
