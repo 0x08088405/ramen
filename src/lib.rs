@@ -15,6 +15,8 @@ mod tests {
         fn test<T: Send + Sync>() {}
 
         test::<crate::error::Error>();
+        test::<crate::event::CloseReason>();
+        test::<crate::event::Event>();
         test::<crate::window::Builder>();
         test::<crate::window::Controls>();
         test::<crate::window::Style>();
