@@ -21,6 +21,9 @@ impl Window {
             }
 
             let delete_prop = XCB.intern_atom(true, "WM_PROTOCOLS");
+            if delete_prop == ffi::XCB_ATOM_NONE { 
+                return Err(Error::SystemResources) // TODO: 
+            }
             let delete_data = XCB.intern_atom(false, "WM_DELETE_WINDOW");
             XCB.change_property(
                 ffi::XCB_PROP_MODE_REPLACE,

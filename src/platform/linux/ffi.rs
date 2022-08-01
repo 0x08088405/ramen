@@ -19,6 +19,7 @@ pub(super) const XCB_PROP_MODE_REPLACE: u8 = 0;
 pub(super) const XCB_PROP_MODE_APPEND: u8 = 1;
 //pub(super) const XCB_PROP_MODE_PREPEND: u8 = 2;
 
+pub(super) const XCB_ATOM_NONE: XcbAtom = 0;
 pub(super) const XCB_ATOM_ATOM: XcbAtom = 4;
 
 pub(super) const XCB_CW_BACK_PIXEL: u32 = 2;
