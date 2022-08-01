@@ -1,15 +1,37 @@
+use crate::event::Event;
 use std::{ffi, mem::transmute, os::raw, ptr};
 
 pub(super) struct Error(raw::c_int);
 
 const XCB_WINDOW_CLASS_INPUT_OUTPUT: u16 = 1;
 
+const XCB_KEY_PRESS: u8 = 2;
+const XCB_KEY_RELEASE: u8 = 3;
+const XCB_BUTTON_PRESS: u8 = 4;
+const XCB_BUTTON_RELEASE: u8 = 5;
+
 pub(super) type XcbColourMap = u32;
 pub(super) type XcbVisualId = u32;
 pub(super) type XcbWindow = u32;
 
+pub(super) const XCB_CW_BACK_PIXEL: u32 = 2;
+pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
+pub(super) const XCB_EVENT_MASK_KEY_PRESS: u32 = 1;
+pub(super) const XCB_EVENT_MASK_KEY_RELEASE: u32 = 2;
+pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
+pub(super) const XCB_EVENT_MASK_BUTTON_RELEASE: u32 = 8;
+
 #[repr(C)]
-pub(super) struct XcbGenericError {
+struct XcbGenericEvent {
+    response_type: u8,
+    _pad0: u8,
+    sequence: u16,
+    _pad: [u32; 7],
+    full_sequence: u32,
+}
+
+#[repr(C)]
+struct XcbGenericError {
     response_type: u8,
     error_code: u8,
     sequence: u16,
@@ -22,6 +44,7 @@ pub(super) struct XcbGenericError {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub(super) struct Cookie {
     seq: raw::c_uint,
 }
@@ -68,6 +91,9 @@ pub(super) struct Xcb {
     generate_id: unsafe extern "C" fn(*mut ConnectionPtr) -> u32,
     create_window: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbWindow, i16, i16, u16, u16, u16, u16, XcbVisualId, u32, *const ffi::c_void) -> Cookie,
     map_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie,
+    discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint),
+    poll_for_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent,
+    poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent,
 }
 unsafe impl Send for Xcb {}
 unsafe impl Sync for Xcb {}
@@ -90,6 +116,9 @@ impl Xcb {
             generate_id: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             create_window: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             map_window: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
+            discard_reply: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
+            poll_for_event: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
+            poll_for_queued_event: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
         }
     }
 
@@ -100,6 +129,11 @@ impl Xcb {
     /// See manual page on `xcb_connection_has_error` for more information.
     pub(super) fn is_valid(&self) -> bool {
         !self.connection.is_null() && unsafe { (self.connection_has_error)(self.connection) } <= 0
+    }
+
+    /// Returns the screen's white pixel value on this particular system.
+    pub(super) fn white_pixel(&self) -> u32 {
+        unsafe { (*self.screen).white_pixel }
     }
 
     /// Calls `xcb_flush`. This should generally be done at the end of any function in imp.rs, or in any other
@@ -124,7 +158,9 @@ impl Xcb {
             if r.is_null() {
                 Ok(())
             } else {
-                Err(Error((*r).error_code.into()))
+                let e = Error((*r).error_code.into());
+                (self.discard_reply)(self.connection, cookie.seq);
+                Err(e)
             }
         }
     }
@@ -137,7 +173,37 @@ impl Xcb {
             if r.is_null() {
                 Ok(())
             } else {
-                Err(Error((*r).error_code.into()))
+                let e = Error((*r).error_code.into());
+                (self.discard_reply)(self.connection, cookie.seq);
+                Err(e)
+            }
+        }
+    }
+
+    /// Calls `xcb_poll_for_event`. Returns the next event in the queue, if any.
+    pub(super) fn poll_event(&self) -> Option<Event> {
+        Self::process_event(unsafe { (self.poll_for_event)(self.connection) })
+    }
+
+    /// Calls `xcb_poll_for_queued_event`. Returns the next event in the queue, if any.
+    pub(super) fn poll_queued_event(&self) -> Option<Event> {
+        Self::process_event(unsafe { (self.poll_for_queued_event)(self.connection) })
+    }
+
+    /// Converts an XcbGenericEvent to a ramen Event
+    fn process_event(event: *mut XcbGenericEvent) -> Option<Event> {
+        if event.is_null() {
+            None
+        } else {
+            unsafe {
+                match (*event).response_type & !0x80 {
+                    XCB_KEY_PRESS => {
+                        //let event: *mut XcbButtonEvent = event.cast();
+                        println!("Key press: {:?}", (*event).response_type);
+                        None
+                    },
+                    _ => None,
+                }
             }
         }
     }
@@ -185,6 +251,25 @@ struct Screen {
     save_unders: u8,
     root_depth: u8,
     allowed_depths_len: u8,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+struct XcbButtonEvent {
+    response_type: u8,
+    detail: u8,
+    sequence: u16,
+    time: u32,
+    root: XcbWindow,
+    event: XcbWindow,
+    child: XcbWindow,
+    root_x: i16,
+    root_y: i16,
+    event_x: i16,
+    event_y: i16,
+    state: u16,
+    same_screen: u8,
+    _pad: u8,
 }
 
 unsafe fn setup() -> Xcb {
@@ -237,6 +322,15 @@ unsafe fn setup() -> Xcb {
     let map_window = libc::dlsym(LIBXCB.0, c_string!("xcb_map_window_checked"));
     if map_window.is_null() { return Xcb::invalid() }
     let map_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie = transmute(map_window);
+    let discard_reply = libc::dlsym(LIBXCB.0, c_string!("xcb_discard_reply"));
+    if discard_reply.is_null() { return Xcb::invalid() }
+    let discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint) = transmute(discard_reply);
+    let poll_for_event = libc::dlsym(LIBXCB.0, c_string!("xcb_poll_for_event"));
+    if poll_for_event.is_null() { return Xcb::invalid() }
+    let poll_for_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent = transmute(poll_for_event);
+    let poll_for_queued_event = libc::dlsym(LIBXCB.0, c_string!("xcb_poll_for_queued_event"));
+    if poll_for_queued_event.is_null() { return Xcb::invalid() }
+    let poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent = transmute(poll_for_queued_event);
 
     let err = xcb_connection_has_error(connection);
     if  err <= 0 {
@@ -250,6 +344,9 @@ unsafe fn setup() -> Xcb {
             generate_id,
             create_window,
             map_window,
+            discard_reply,
+            poll_for_event,
+            poll_for_queued_event,
         }
     } else {
         Xcb::invalid()
