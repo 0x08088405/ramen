@@ -195,16 +195,17 @@ impl Xcb {
         if event.is_null() {
             None
         } else {
-            unsafe {
+            let ret = unsafe {
                 match (*event).response_type & !0x80 {
                     XCB_KEY_PRESS => {
-                        //let event: *mut XcbButtonEvent = event.cast();
-                        println!("Key press: {:?}", (*event).response_type);
+                        let _event: *mut XcbButtonEvent = event.cast();
                         None
                     },
                     _ => None,
                 }
-            }
+            };
+            unsafe { libc::free(event.cast()); }
+            ret
         }
     }
 }
