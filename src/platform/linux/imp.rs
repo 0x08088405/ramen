@@ -8,7 +8,7 @@ pub(crate) struct Window {
 }
 
 impl Window {
-    pub(crate) fn new(_builder: &window::Builder) -> Result<Self, Error> {
+    pub(crate) fn new(builder: &window::Builder) -> Result<Self, Error> {
         if XCB.is_valid() {
             let id = XCB.generate_id();
             let value_mask = ffi::XCB_CW_BACK_PIXEL | ffi::XCB_CW_EVENT_MASK;
@@ -33,6 +33,17 @@ impl Window {
                 32,
                 1,
                 (&delete_data) as *const u32 as _,
+            );
+
+            let title = builder.title.as_ref();
+            XCB.change_property(
+                ffi::XCB_PROP_MODE_REPLACE,
+                id,
+                ffi::XCB_ATOM_WM_NAME,
+                ffi::XCB_ATOM_STRING,
+                8,
+                title.bytes().len() as _,
+                title.as_ptr().cast(),
             );
             
             if XCB.flush().is_err() {
