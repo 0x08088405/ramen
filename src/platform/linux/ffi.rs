@@ -10,9 +10,16 @@ const XCB_KEY_RELEASE: u8 = 3;
 const XCB_BUTTON_PRESS: u8 = 4;
 const XCB_BUTTON_RELEASE: u8 = 5;
 
+pub(super) type XcbAtom = u32;
 pub(super) type XcbColourMap = u32;
 pub(super) type XcbVisualId = u32;
 pub(super) type XcbWindow = u32;
+
+pub(super) const XCB_PROP_MODE_REPLACE: u8 = 0;
+pub(super) const XCB_PROP_MODE_APPEND: u8 = 1;
+//pub(super) const XCB_PROP_MODE_PREPEND: u8 = 2;
+
+pub(super) const XCB_ATOM_ATOM: XcbAtom = 4;
 
 pub(super) const XCB_CW_BACK_PIXEL: u32 = 2;
 pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
@@ -41,6 +48,15 @@ struct XcbGenericError {
     _pad0: u8,
     _pad: [u32; 5],
     full_sequence: u32,
+}
+
+#[repr(C)]
+struct XcbAtomReply {
+    response_type: u8,
+    _pad0: u8,
+    sequence: u16,
+    length: u32,
+    atom: XcbAtom,
 }
 
 #[repr(C)]
@@ -94,6 +110,9 @@ pub(super) struct Xcb {
     discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint),
     poll_for_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent,
     poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent,
+    intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
+    intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut XcbAtomReply,
+    change_property: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbAtom, XcbAtom, u8, u32, *const ffi::c_void) -> Cookie,
 }
 unsafe impl Send for Xcb {}
 unsafe impl Sync for Xcb {}
@@ -119,6 +138,9 @@ impl Xcb {
             discard_reply: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             poll_for_event: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             poll_for_queued_event: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
+            intern_atom: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
+            intern_atom_reply: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
+            change_property: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
         }
     }
 
@@ -177,6 +199,27 @@ impl Xcb {
                 (self.discard_reply)(self.connection, cookie.seq);
                 Err(e)
             }
+        }
+    }
+
+    /// Calls `xcb_intern_atom`. Results will be unexpected if `name` is longer than 65535 bytes.
+    pub(super) fn intern_atom(&self, only_if_exists: bool, name: &str) -> XcbAtom {
+        unsafe {
+            // TODO: how to check this error correctly?
+            let cookie = (self.intern_atom)(self.connection, only_if_exists.into(), name.bytes().len() as _, name.as_ptr().cast());
+            let mut err: *mut XcbGenericError = ptr::null_mut();
+            let reply = (self.intern_atom_reply)(self.connection, cookie, (&mut err) as _);
+            let atom = (*reply).atom;
+            (self.discard_reply)(self.connection, cookie.seq);
+            atom
+        }
+    }
+
+    /// Calls `xcb_change_property`. See its manpage for more information on this function.
+    pub(super) fn change_property(&self, mode: u8, window: XcbWindow, property: XcbAtom, prop_type: XcbAtom, format: u8, data_elements: u32, data: *const ffi::c_void) {
+        unsafe {
+            let cookie = (self.change_property)(self.connection, mode, window, property, prop_type, format, data_elements, data);
+            (self.discard_reply)(self.connection, cookie.seq);
         }
     }
 
@@ -332,6 +375,15 @@ unsafe fn setup() -> Xcb {
     let poll_for_queued_event = libc::dlsym(LIBXCB.0, c_string!("xcb_poll_for_queued_event"));
     if poll_for_queued_event.is_null() { return Xcb::invalid() }
     let poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent = transmute(poll_for_queued_event);
+    let intern_atom = libc::dlsym(LIBXCB.0, c_string!("xcb_intern_atom"));
+    if intern_atom.is_null() { return Xcb::invalid() }
+    let intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie = transmute(intern_atom);
+    let intern_atom_reply = libc::dlsym(LIBXCB.0, c_string!("xcb_intern_atom_reply"));
+    if intern_atom_reply.is_null() { return Xcb::invalid() }
+    let intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut XcbAtomReply = transmute(intern_atom_reply);
+    let change_property = libc::dlsym(LIBXCB.0, c_string!("xcb_change_property_checked"));
+    if change_property.is_null() { return Xcb::invalid() }
+    let change_property: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbAtom, XcbAtom, u8, u32, *const ffi::c_void) -> Cookie = transmute(change_property);
 
     let err = xcb_connection_has_error(connection);
     if  err <= 0 {
@@ -348,6 +400,9 @@ unsafe fn setup() -> Xcb {
             discard_reply,
             poll_for_event,
             poll_for_queued_event,
+            intern_atom,
+            intern_atom_reply,
+            change_property,
         }
     } else {
         Xcb::invalid()

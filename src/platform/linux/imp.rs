@@ -19,11 +19,24 @@ impl Window {
             if XCB.create_window(id, 1, 1, 800, 608, 1, value_mask, value_list).is_err() {
                 return Err(Error::SystemResources) // TODO: ?
             }
-            if XCB.map_window(id).is_err() {
-                return Err(Error::SystemResources) // TODO: ??
-            }
+
+            let delete_prop = XCB.intern_atom(true, "WM_PROTOCOLS");
+            let delete_data = XCB.intern_atom(false, "WM_DELETE_WINDOW");
+            XCB.change_property(
+                ffi::XCB_PROP_MODE_REPLACE,
+                id,
+                delete_prop,
+                ffi::XCB_ATOM_ATOM,
+                32,
+                1,
+                (&delete_data) as *const u32 as _,
+            );
+            
             if XCB.flush().is_err() {
                 return Err(Error::SystemResources) // TODO: ???
+            }
+            if XCB.map_window(id).is_err() {
+                return Err(Error::SystemResources) // TODO: ??
             }
             Ok(Window { handle: id, event_queue: Vec::with_capacity(64) })
         } else {
