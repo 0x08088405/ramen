@@ -3,7 +3,7 @@ use crate::{error::Error, event::Event, window};
 use super::ffi::{self, XCB};
 
 pub(crate) struct Window {
-    _handle: ffi::XcbWindow,
+    handle: ffi::XcbWindow,
     event_queue: Vec<Event>,
 }
 
@@ -92,7 +92,7 @@ impl Window {
             if XCB.map_window(id).is_err() {
                 return Err(Error::Invalid)
             }
-            Ok(Window { _handle: id, event_queue: Vec::with_capacity(64) })
+            Ok(Window { handle: id, event_queue: Vec::with_capacity(64) })
         } else {
             match ffi::dl_error() {
                 Some(s) => Err(Error::Text(s.into())),
@@ -115,5 +115,13 @@ impl Window {
             }
         }
         
+    }
+}
+
+impl Drop for Window {
+    fn drop(&mut self) {
+        if XCB.destroy_window(self.handle).is_ok() {
+            let _ = XCB.flush();
+        }
     }
 }

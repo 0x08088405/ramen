@@ -1,6 +1,7 @@
 use crate::event::Event;
 use std::{ffi, mem::transmute, os::raw, ptr};
 
+#[derive(Debug)]
 pub(super) struct Error(raw::c_int);
 
 const XCB_WINDOW_CLASS_INPUT_OUTPUT: u16 = 1;
@@ -111,6 +112,7 @@ pub(super) struct Xcb {
     generate_id: unsafe extern "C" fn(*mut ConnectionPtr) -> u32,
     create_window: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbWindow, i16, i16, u16, u16, u16, u16, XcbVisualId, u32, *const ffi::c_void) -> Cookie,
     map_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie,
+    destroy_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie,
     discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint),
     poll_for_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent,
     poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent,
@@ -139,6 +141,7 @@ impl Xcb {
             generate_id: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             create_window: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             map_window: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
+            destroy_window: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             discard_reply: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             poll_for_event: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             poll_for_queued_event: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
@@ -195,6 +198,22 @@ impl Xcb {
     pub(super) fn map_window(&self, window: XcbWindow) -> Result<(), Error> {
         unsafe {
             let cookie = (self.map_window)(self.connection, window);
+            let r = (self.request_check)(self.connection, cookie);
+            if r.is_null() {
+                Ok(())
+            } else {
+                let e = Error((*r).error_code.into());
+                (self.discard_reply)(self.connection, cookie.seq);
+                Err(e)
+            }
+        }
+    }
+
+    /// Calls `xcb_destroy_window` on the given window. The given Window will no longer exist and its handle
+    /// will be invalid after calling this function.
+    pub(super) fn destroy_window(&self, window: XcbWindow) -> Result<(), Error> {
+        unsafe {
+            let cookie = (self.destroy_window)(self.connection, window);
             let r = (self.request_check)(self.connection, cookie);
             if r.is_null() {
                 Ok(())
@@ -373,6 +392,9 @@ unsafe fn setup() -> Xcb {
     let map_window = libc::dlsym(LIBXCB.0, c_string!("xcb_map_window_checked"));
     if map_window.is_null() { return Xcb::invalid() }
     let map_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie = transmute(map_window);
+    let destroy_window = libc::dlsym(LIBXCB.0, c_string!("xcb_destroy_window"));
+    if destroy_window.is_null() { return Xcb::invalid() }
+    let destroy_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie = transmute(map_window);
     let discard_reply = libc::dlsym(LIBXCB.0, c_string!("xcb_discard_reply"));
     if discard_reply.is_null() { return Xcb::invalid() }
     let discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint) = transmute(discard_reply);
@@ -404,6 +426,7 @@ unsafe fn setup() -> Xcb {
             generate_id,
             create_window,
             map_window,
+            destroy_window,
             discard_reply,
             poll_for_event,
             poll_for_queued_event,
