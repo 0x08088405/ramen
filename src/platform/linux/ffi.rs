@@ -6,9 +6,9 @@ pub(super) struct Error(raw::c_int);
 const XCB_WINDOW_CLASS_INPUT_OUTPUT: u16 = 1;
 
 const XCB_KEY_PRESS: u8 = 2;
-const XCB_KEY_RELEASE: u8 = 3;
-const XCB_BUTTON_PRESS: u8 = 4;
-const XCB_BUTTON_RELEASE: u8 = 5;
+//const XCB_KEY_RELEASE: u8 = 3;
+//const XCB_BUTTON_PRESS: u8 = 4;
+//const XCB_BUTTON_RELEASE: u8 = 5;
 
 pub(super) type XcbAtom = u32;
 pub(super) type XcbColourMap = u32;
@@ -16,7 +16,7 @@ pub(super) type XcbVisualId = u32;
 pub(super) type XcbWindow = u32;
 
 pub(super) const XCB_PROP_MODE_REPLACE: u8 = 0;
-pub(super) const XCB_PROP_MODE_APPEND: u8 = 1;
+//pub(super) const XCB_PROP_MODE_APPEND: u8 = 1;
 //pub(super) const XCB_PROP_MODE_PREPEND: u8 = 2;
 
 pub(super) const XCB_ATOM_NONE: XcbAtom = 0;

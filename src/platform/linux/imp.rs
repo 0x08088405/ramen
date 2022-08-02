@@ -1,9 +1,9 @@
 // TODO: I suppose we'll need some method of deciding at runtime whether to use x11 or wayland? This is just x11
 use crate::{error::Error, event::Event, window};
-use super::ffi::{self, XCB, XCB_EVENT_MASK_KEY_PRESS, XCB_EVENT_MASK_KEY_RELEASE, XCB_EVENT_MASK_BUTTON_PRESS, XCB_EVENT_MASK_BUTTON_RELEASE, XCB_ATOM_WM_NAME};
+use super::ffi::{self, XCB};
 
 pub(crate) struct Window {
-    handle: ffi::XcbWindow,
+    _handle: ffi::XcbWindow,
     event_queue: Vec<Event>,
 }
 
@@ -14,7 +14,7 @@ impl Window {
             let value_mask = ffi::XCB_CW_BACK_PIXEL | ffi::XCB_CW_EVENT_MASK;
             let value_list = &[
                 XCB.white_pixel(),
-                XCB_EVENT_MASK_KEY_PRESS | XCB_EVENT_MASK_KEY_RELEASE | XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_BUTTON_RELEASE,
+                ffi::XCB_EVENT_MASK_KEY_PRESS | ffi::XCB_EVENT_MASK_KEY_RELEASE | ffi::XCB_EVENT_MASK_BUTTON_PRESS | ffi::XCB_EVENT_MASK_BUTTON_RELEASE,
             ];
             if XCB.create_window(id, 1, 1, 800, 608, 1, value_mask, value_list).is_err() {
                 return Err(Error::SystemResources) // TODO: ?
@@ -75,7 +75,7 @@ impl Window {
             if XCB.map_window(id).is_err() {
                 return Err(Error::SystemResources) // TODO: ??
             }
-            Ok(Window { handle: id, event_queue: Vec::with_capacity(64) })
+            Ok(Window { _handle: id, event_queue: Vec::with_capacity(64) })
         } else {
             match ffi::dl_error() {
                 Some(s) => Err(Error::Other(s)),
