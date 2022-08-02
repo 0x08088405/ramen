@@ -75,12 +75,14 @@ impl Window {
             
             // Flush FFI requests. I'm not really sure what condition would cause an error here, if one even exists.
             if XCB.flush().is_err() {
+                let _ = XCB.destroy_window(id);
                 return Err(Error::Invalid)
             }
 
             // And finally, try to map the window to the screen
             // If successful the window will become visible at this point.
             if XCB.map_window(id).is_err() {
+                let _ = XCB.destroy_window(id);
                 return Err(Error::Invalid)
             }
             Ok(Window { handle: id, event_queue: Vec::with_capacity(64) })
