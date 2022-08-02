@@ -1,15 +1,12 @@
-use crate::event::Event;
+mod event;
+pub(super) use event::Event;
+
 use std::{ffi, mem::transmute, os::raw, ptr};
 
 #[derive(Debug)]
 pub(super) struct Error(raw::c_int);
 
 const XCB_WINDOW_CLASS_INPUT_OUTPUT: u16 = 1;
-
-const XCB_KEY_PRESS: u8 = 2;
-//const XCB_KEY_RELEASE: u8 = 3;
-//const XCB_BUTTON_PRESS: u8 = 4;
-//const XCB_BUTTON_RELEASE: u8 = 5;
 
 pub(super) type XcbAtom = u32;
 pub(super) type XcbColourMap = u32;
@@ -34,15 +31,6 @@ pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
 pub(super) const XCB_EVENT_MASK_BUTTON_RELEASE: u32 = 8;
 
 #[repr(C)]
-struct XcbGenericEvent {
-    response_type: u8,
-    _pad0: u8,
-    sequence: u16,
-    _pad: [u32; 7],
-    full_sequence: u32,
-}
-
-#[repr(C)]
 struct XcbGenericError {
     response_type: u8,
     error_code: u8,
@@ -53,15 +41,6 @@ struct XcbGenericError {
     _pad0: u8,
     _pad: [u32; 5],
     full_sequence: u32,
-}
-
-#[repr(C)]
-struct XcbAtomReply {
-    response_type: u8,
-    _pad0: u8,
-    sequence: u16,
-    length: u32,
-    atom: XcbAtom,
 }
 
 #[repr(C)]
@@ -105,6 +84,11 @@ enum ConnectionPtr {}
 pub(super) struct Xcb {
     connection: *mut ConnectionPtr,
     screen: *mut Screen,
+    pub(super) atom_wm_protocols: XcbAtom,
+    pub(super) atom_wm_delete_window: XcbAtom,
+    pub(super) atom_net_wm_name: Option<XcbAtom>,
+    pub(super) atom_net_wm_pid: XcbAtom,
+    pub(super) atom_utf8_string: Option<XcbAtom>,
     request_check: unsafe extern "C" fn(*mut ConnectionPtr, Cookie) -> *mut XcbGenericError,
     connection_has_error: unsafe extern "C" fn(*mut ConnectionPtr) -> raw::c_int,
     disconnect: unsafe extern "C" fn(*mut ConnectionPtr),
@@ -114,10 +98,10 @@ pub(super) struct Xcb {
     map_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie,
     destroy_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie,
     discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint),
-    poll_for_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent,
-    poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent,
-    intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
-    intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut XcbAtomReply,
+    poll_for_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut event::XcbGenericEvent,
+    poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut event::XcbGenericEvent,
+    _intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
+    _intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply,
     change_property: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbAtom, XcbAtom, u8, u32, *const ffi::c_void) -> Cookie,
 }
 unsafe impl Send for Xcb {}
@@ -134,6 +118,11 @@ impl Xcb {
         Self {
             connection: ptr::null_mut(),
             screen: ptr::null_mut(),
+            atom_wm_protocols: 0,
+            atom_wm_delete_window: 0,
+            atom_net_wm_name: None,
+            atom_net_wm_pid: 0,
+            atom_utf8_string: None,
             request_check: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             connection_has_error: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             disconnect: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
@@ -145,8 +134,8 @@ impl Xcb {
             discard_reply: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             poll_for_event: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             poll_for_queued_event: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
-            intern_atom: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
-            intern_atom_reply: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
+            _intern_atom: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
+            _intern_atom_reply: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             change_property: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
         }
     }
@@ -225,22 +214,6 @@ impl Xcb {
         }
     }
 
-    /// Calls `xcb_intern_atom`. Results will be unexpected if `name` is longer than 65535 bytes.
-    /// 
-    /// If `only_if_exists` is true, this function may return `XCB_ATOM_NONE` if the requested prop doesn't exist on
-    /// the user's system. This is intended to be used to check if features are supported at runtime.
-    pub(super) fn intern_atom(&self, only_if_exists: bool, name: &str) -> XcbAtom {
-        unsafe {
-            // TODO: how to check this error correctly?
-            let cookie = (self.intern_atom)(self.connection, only_if_exists.into(), name.bytes().len() as _, name.as_ptr().cast());
-            let mut err: *mut XcbGenericError = ptr::null_mut();
-            let reply = (self.intern_atom_reply)(self.connection, cookie, (&mut err) as _);
-            let atom = (*reply).atom;
-            (self.discard_reply)(self.connection, cookie.seq);
-            atom
-        }
-    }
-
     /// Calls `xcb_change_property`. See its manpage for more information on this function.
     pub(super) fn change_property(&self, mode: u8, window: XcbWindow, property: XcbAtom, prop_type: XcbAtom, format: u8, data_elements: u32, data: *const ffi::c_void) {
         unsafe {
@@ -250,31 +223,36 @@ impl Xcb {
     }
 
     /// Calls `xcb_poll_for_event`. Returns the next event in the queue, if any.
+    /// 
+    /// This functions polls the connection if there are no more queued events, whereas `poll_queued_event()` does not.
+    /// 
+    /// This function will return None either if there are no queued events, or the first queued event is not relevant to
+    /// the application. So, if trying to get all queued events, `poll_queued_event()` should still be called in a
+    /// loop after this even if this returns None.
     pub(super) fn poll_event(&self) -> Option<Event> {
-        Self::process_event(unsafe { (self.poll_for_event)(self.connection) })
-    }
-
-    /// Calls `xcb_poll_for_queued_event`. Returns the next event in the queue, if any.
-    pub(super) fn poll_queued_event(&self) -> Option<Event> {
-        Self::process_event(unsafe { (self.poll_for_queued_event)(self.connection) })
-    }
-
-    /// Converts an XcbGenericEvent to a ramen Event
-    fn process_event(event: *mut XcbGenericEvent) -> Option<Event> {
-        if event.is_null() {
+        let ev = unsafe { (self.poll_for_event)(self.connection) };
+        if ev.is_null() {
             None
         } else {
-            let ret = unsafe {
-                match (*event).response_type & !0x80 {
-                    XCB_KEY_PRESS => {
-                        let _event: *mut XcbButtonEvent = event.cast();
-                        None
-                    },
-                    _ => None,
-                }
-            };
-            unsafe { libc::free(event.cast()); }
-            ret
+            let ret = Event::from_generic(ev);
+            unsafe { libc::free(ev.cast()); }
+            ret            
+        }
+    }
+
+    /// Calls `xcb_poll_for_queued_event`. Returns the next event in XCB's queue, if any, without checking for any
+    /// new events since XCB's queue was last populated.
+    /// 
+    /// `poll_event` should first be used to populate the queue. This function returning None means the queue is empty.
+    pub(super) fn poll_queued_event(&self) -> Option<Event> {
+        loop {
+            let ev = unsafe { (self.poll_for_queued_event)(self.connection) };
+            if ev.is_null() {
+                break None
+            } else if let Some(e) = Event::from_generic(ev) {
+                unsafe { libc::free(ev.cast()); }
+                break Some(e)
+            }
         }
     }
 }
@@ -321,25 +299,6 @@ struct Screen {
     save_unders: u8,
     root_depth: u8,
     allowed_depths_len: u8,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-struct XcbButtonEvent {
-    response_type: u8,
-    detail: u8,
-    sequence: u16,
-    time: u32,
-    root: XcbWindow,
-    event: XcbWindow,
-    child: XcbWindow,
-    root_x: i16,
-    root_y: i16,
-    event_x: i16,
-    event_y: i16,
-    state: u16,
-    same_screen: u8,
-    _pad: u8,
 }
 
 unsafe fn setup() -> Xcb {
@@ -400,25 +359,40 @@ unsafe fn setup() -> Xcb {
     let discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint) = transmute(discard_reply);
     let poll_for_event = libc::dlsym(LIBXCB.0, c_string!("xcb_poll_for_event"));
     if poll_for_event.is_null() { return Xcb::invalid() }
-    let poll_for_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent = transmute(poll_for_event);
+    let poll_for_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut event::XcbGenericEvent = transmute(poll_for_event);
     let poll_for_queued_event = libc::dlsym(LIBXCB.0, c_string!("xcb_poll_for_queued_event"));
     if poll_for_queued_event.is_null() { return Xcb::invalid() }
-    let poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbGenericEvent = transmute(poll_for_queued_event);
+    let poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut event::XcbGenericEvent = transmute(poll_for_queued_event);
     let intern_atom = libc::dlsym(LIBXCB.0, c_string!("xcb_intern_atom"));
     if intern_atom.is_null() { return Xcb::invalid() }
     let intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie = transmute(intern_atom);
     let intern_atom_reply = libc::dlsym(LIBXCB.0, c_string!("xcb_intern_atom_reply"));
     if intern_atom_reply.is_null() { return Xcb::invalid() }
-    let intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut XcbAtomReply = transmute(intern_atom_reply);
+    let intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply = transmute(intern_atom_reply);
     let change_property = libc::dlsym(LIBXCB.0, c_string!("xcb_change_property_checked"));
     if change_property.is_null() { return Xcb::invalid() }
     let change_property: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbAtom, XcbAtom, u8, u32, *const ffi::c_void) -> Cookie = transmute(change_property);
+
+    // And some non-standard atom values...
+    let atom_wm_protocols = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "WM_PROTOCOLS");
+    if atom_wm_protocols == XCB_ATOM_NONE { return Xcb::invalid() }
+    let atom_wm_delete_window = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "WM_DELETE_WINDOW");
+    if atom_wm_delete_window == XCB_ATOM_NONE { return Xcb::invalid() }
+    let atom_net_wm_name = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "_NET_WM_NAME");
+    let atom_net_wm_pid = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "_NET_WM_PID");
+    if atom_net_wm_pid == XCB_ATOM_NONE { return Xcb::invalid() }
+    let atom_utf8_string = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "UTF8_STRING");
 
     let err = xcb_connection_has_error(connection);
     if  err <= 0 {
         Xcb {
             connection,
             screen,
+            atom_wm_protocols,
+            atom_wm_delete_window,
+            atom_net_wm_name: if atom_net_wm_name == XCB_ATOM_NONE { None } else { Some(atom_net_wm_name) },
+            atom_net_wm_pid,
+            atom_utf8_string: if atom_utf8_string == XCB_ATOM_NONE { None } else { Some(atom_utf8_string) },
             request_check,
             connection_has_error: xcb_connection_has_error,
             disconnect,
@@ -430,12 +404,32 @@ unsafe fn setup() -> Xcb {
             discard_reply,
             poll_for_event,
             poll_for_queued_event,
-            intern_atom,
-            intern_atom_reply,
+            _intern_atom: intern_atom,
+            _intern_atom_reply: intern_atom_reply,
             change_property,
         }
     } else {
         Xcb::invalid()
+    }
+}
+
+// Helper fn for calling intern_atom before Xcb has been constructed... (Xcb::intern_atom wraps this)
+fn intern_atom_internal(
+    connection: *mut ConnectionPtr,
+    intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
+    intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply,
+    discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint),
+    only_if_exists: bool,
+    name: &str,
+) -> XcbAtom {
+    unsafe {
+        // TODO: how to check this error correctly?
+        let cookie = (intern_atom)(connection, only_if_exists.into(), name.bytes().len() as _, name.as_ptr().cast());
+        let mut err: *mut XcbGenericError = ptr::null_mut();
+        let reply = (intern_atom_reply)(connection, cookie, (&mut err) as _);
+        let atom = (*reply).atom;
+        (discard_reply)(connection, cookie.seq);
+        atom
     }
 }
 

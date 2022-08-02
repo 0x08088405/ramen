@@ -1,5 +1,5 @@
 // TODO: I suppose we'll need some method of deciding at runtime whether to use x11 or wayland? This is just x11
-use crate::{error::Error, event::Event, window};
+use crate::{error::Error, event::{CloseReason, Event}, window};
 use super::ffi::{self, XCB};
 
 pub(crate) struct Window {
@@ -25,20 +25,14 @@ impl Window {
             }
 
             // Add WM_DELETE_WINDOW to WM_PROTOCOLS - important so we can hook the user clicking the X button
-            let delete_prop = XCB.intern_atom(true, "WM_PROTOCOLS");
-            if delete_prop == ffi::XCB_ATOM_NONE {
-                // No WM_PROTOCOLS prop on window?
-                return Err(Error::Unsupported)
-            }
-            let delete_data = XCB.intern_atom(false, "WM_DELETE_WINDOW");
             XCB.change_property(
                 ffi::XCB_PROP_MODE_REPLACE,
                 id,
-                delete_prop,
+                XCB.atom_wm_protocols,
                 ffi::XCB_ATOM_ATOM,
                 32,
                 1,
-                (&delete_data) as *const u32 as _,
+                (&XCB.atom_wm_delete_window) as *const u32 as _,
             );
 
             // Try to write the requested window title to the WM_NAME and _NET_WM_NAME properties
@@ -46,14 +40,12 @@ impl Window {
             // the user's system. If it doesn't exist, and the title contains multibyte UTF8 characters, AND the user's
             // system locale is not UTF8, then the title won't render properly. I don't care and neither should you.
             let title = builder.title.as_ref();
-            let title_prop = XCB.intern_atom(false, "_NET_WM_NAME");
-            let title_prop_type = XCB.intern_atom(true, "UTF8_STRING");
-            if title_prop_type != ffi::XCB_ATOM_NONE {
+            if let (Some(atom_net_wm_name), Some(atom_utf8_string)) = (XCB.atom_net_wm_name, XCB.atom_utf8_string) {
                 XCB.change_property(
                     ffi::XCB_PROP_MODE_REPLACE,
                     id,
-                    title_prop,
-                    title_prop_type,
+                    atom_net_wm_name,
+                    atom_utf8_string,
                     8,
                     title.bytes().len() as _,
                     title.as_ptr().cast(),
@@ -71,11 +63,10 @@ impl Window {
 
             // Get PID of current process and write that to _NET_WM_PID
             let pid = unsafe { libc::getpid() };
-            let pid_prop = XCB.intern_atom(false, "_NET_WM_PID");
             XCB.change_property(
                 ffi::XCB_PROP_MODE_REPLACE,
                 id,
-                pid_prop,
+                XCB.atom_net_wm_pid,
                 ffi::XCB_ATOM_CARDINAL,
                 32,
                 1,
@@ -107,14 +98,14 @@ impl Window {
 
     pub(crate) fn poll_events(&mut self) {
         self.event_queue.clear();
-        if let Some(event) = XCB.poll_event() {
-            println!("{:?}", event);
-            loop {
-                let event = XCB.poll_queued_event();
-                if event.is_none() { break } else { println!("{:?}", event) }
+        if let Some(event) = XCB.poll_event().and_then(process_event) {
+            self.event_queue.push(event);
+        }
+        while let Some(event) = XCB.poll_queued_event() {
+            if let Some(event) = process_event(event) {
+                self.event_queue.push(event);
             }
         }
-        
     }
 }
 
@@ -122,6 +113,22 @@ impl Drop for Window {
     fn drop(&mut self) {
         if XCB.destroy_window(self.handle).is_ok() {
             let _ = XCB.flush();
+        }
+    }
+}
+
+// For translating an ffi Event to a ramen Event
+fn process_event(ev: ffi::Event) -> Option<Event> {
+    unsafe {
+        match ev {
+            ffi::Event::ClientMessage { format, client_data, r#type, .. } => {
+                if format == 32 && r#type == XCB.atom_wm_protocols && client_data.data32[0] == XCB.atom_wm_delete_window {
+                    Some(Event::CloseRequest(CloseReason::SystemMenu))
+                } else {
+                    None
+                }
+            },
+            //_ => None,
         }
     }
 }
