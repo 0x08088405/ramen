@@ -1,6 +1,6 @@
 // TODO: I suppose we'll need some method of deciding at runtime whether to use x11 or wayland? This is just x11
 use crate::{error::Error, event::Event, window};
-use super::ffi::{self, XCB, XCB_EVENT_MASK_KEY_PRESS, XCB_EVENT_MASK_KEY_RELEASE, XCB_EVENT_MASK_BUTTON_PRESS, XCB_EVENT_MASK_BUTTON_RELEASE};
+use super::ffi::{self, XCB, XCB_EVENT_MASK_KEY_PRESS, XCB_EVENT_MASK_KEY_RELEASE, XCB_EVENT_MASK_BUTTON_PRESS, XCB_EVENT_MASK_BUTTON_RELEASE, XCB_ATOM_WM_NAME};
 
 pub(crate) struct Window {
     handle: ffi::XcbWindow,
@@ -36,6 +36,17 @@ impl Window {
             );
 
             let title = builder.title.as_ref();
+            let title_prop = XCB.intern_atom(false, "_NET_WM_NAME");
+            let title_prop_type = XCB.intern_atom(false, "UTF8_STRING");
+            XCB.change_property(
+                ffi::XCB_PROP_MODE_REPLACE,
+                id,
+                title_prop,
+                title_prop_type,
+                8,
+                title.bytes().len() as _,
+                title.as_ptr().cast(),
+            );
             XCB.change_property(
                 ffi::XCB_PROP_MODE_REPLACE,
                 id,
@@ -47,7 +58,6 @@ impl Window {
             );
 
             let pid = unsafe { libc::getpid() };
-            println!("PID: {}", pid);
             let pid_prop = XCB.intern_atom(false, "_NET_WM_PID");
             XCB.change_property(
                 ffi::XCB_PROP_MODE_REPLACE,
