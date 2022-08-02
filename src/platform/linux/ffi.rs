@@ -207,6 +207,9 @@ impl Xcb {
     }
 
     /// Calls `xcb_intern_atom`. Results will be unexpected if `name` is longer than 65535 bytes.
+    /// 
+    /// If `only_if_exists` is true, this function may return `XCB_ATOM_NONE` if the requested prop doesn't exist on
+    /// the user's system. This is intended to be used to check if features are supported at runtime.
     pub(super) fn intern_atom(&self, only_if_exists: bool, name: &str) -> XcbAtom {
         unsafe {
             // TODO: how to check this error correctly?
