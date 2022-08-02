@@ -45,6 +45,19 @@ impl Window {
                 title.bytes().len() as _,
                 title.as_ptr().cast(),
             );
+
+            let pid = unsafe { libc::getpid() };
+            println!("PID: {}", pid);
+            let pid_prop = XCB.intern_atom(false, "_NET_WM_PID");
+            XCB.change_property(
+                ffi::XCB_PROP_MODE_REPLACE,
+                id,
+                pid_prop,
+                ffi::XCB_ATOM_CARDINAL,
+                32,
+                1,
+                (&pid) as *const i32 as _,
+            );
             
             if XCB.flush().is_err() {
                 return Err(Error::SystemResources) // TODO: ???

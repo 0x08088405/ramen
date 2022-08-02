@@ -21,6 +21,7 @@ pub(super) const XCB_PROP_MODE_APPEND: u8 = 1;
 
 pub(super) const XCB_ATOM_NONE: XcbAtom = 0;
 pub(super) const XCB_ATOM_ATOM: XcbAtom = 4;
+pub(super) const XCB_ATOM_CARDINAL: XcbAtom = 6;
 pub(super) const XCB_ATOM_STRING: XcbAtom = 31;
 pub(super) const XCB_ATOM_WM_NAME: XcbAtom = 39;
 
