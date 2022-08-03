@@ -301,119 +301,88 @@ struct Screen {
     allowed_depths_len: u8,
 }
 
-unsafe fn setup() -> Xcb {
+unsafe fn setup() -> Option<Xcb> {
+    macro_rules! load_fn {
+        ($name:literal) => {{
+            let request_check = libc::dlsym(LIBXCB.0, c_string!($name));
+            if request_check.is_null() { None } else { Some(transmute(request_check)) }
+        }}
+    }
+
     // Check validity of our connection to libxcb.so and existence of functions we actually need here
-    if !LIBXCB.is_valid() { return Xcb::invalid() }
-    let xcb_connect = libc::dlsym(LIBXCB.0, c_string!("xcb_connect"));
-    if xcb_connect.is_null() { return Xcb::invalid() }
-    let xcb_connection_has_error = libc::dlsym(LIBXCB.0, c_string!("xcb_connection_has_error"));
-    if xcb_connection_has_error.is_null() { return Xcb::invalid() }
-    let xcb_get_setup = libc::dlsym(LIBXCB.0, c_string!("xcb_get_setup"));
-    if xcb_get_setup.is_null() { return Xcb::invalid() }
-    let xcb_setup_roots_iterator = libc::dlsym(LIBXCB.0, c_string!("xcb_setup_roots_iterator"));
-    if xcb_setup_roots_iterator.is_null() { return Xcb::invalid() }
-    let xcb_setup_roots_length = libc::dlsym(LIBXCB.0, c_string!("xcb_setup_roots_length"));
-    if xcb_setup_roots_length.is_null() { return Xcb::invalid() }
+    if !LIBXCB.is_valid() { return None }
+    enum XcbSetup {}
+    let xcb_connect: unsafe extern "C" fn(*const raw::c_char, *mut raw::c_int) -> *mut ConnectionPtr = load_fn!("xcb_connect")?;
+    let xcb_connection_has_error: unsafe extern "C" fn(*mut ConnectionPtr) -> raw::c_int = load_fn!("xcb_connection_has_error")?;
+    let xcb_get_setup: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbSetup = load_fn!("xcb_get_setup")?;
+    let xcb_setup_roots_iterator: unsafe extern "C" fn(*const XcbSetup) -> ScreenIterator = load_fn!("xcb_setup_roots_iterator")?;
+    let xcb_setup_roots_length: unsafe extern "C" fn(*const XcbSetup) -> raw::c_int = load_fn!("xcb_setup_roots_length")?;
 
     // Create an XCB connection
-    let xcb_connect: unsafe extern "C" fn(*const raw::c_char, *mut raw::c_int) -> *mut ConnectionPtr = transmute(xcb_connect);
-    let xcb_connection_has_error: unsafe extern "C" fn(*mut ConnectionPtr) -> raw::c_int = transmute(xcb_connection_has_error);
     let connection = xcb_connect(ptr::null(), ptr::null_mut());
+    let err = xcb_connection_has_error(connection);
+    if err > 0 { return None }
 
     // Iterate screens
-    enum SetupPtr {}
-    let xcb_get_setup: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut SetupPtr = transmute(xcb_get_setup);
-    let xcb_setup_roots_iterator: unsafe extern "C" fn(*const SetupPtr) -> ScreenIterator = transmute(xcb_setup_roots_iterator);
-    let xcb_setup_roots_length: unsafe extern "C" fn(*const SetupPtr) -> raw::c_int = transmute(xcb_setup_roots_length);
     let setup = xcb_get_setup(connection);
     let length = xcb_setup_roots_length(setup);
-    if length <= 0 { return Xcb::invalid() }
+    if length <= 0 { return None }
     let iter: ScreenIterator = xcb_setup_roots_iterator(setup);
     let screen = iter.data;
-    if screen.is_null() { return Xcb::invalid() }
+    if screen.is_null() { return None }
 
     // Define other functions we'll need
-    let request_check = libc::dlsym(LIBXCB.0, c_string!("xcb_request_check"));
-    if request_check.is_null() { return Xcb::invalid() }
-    let request_check: unsafe extern "C" fn(*mut ConnectionPtr, Cookie) -> *mut XcbGenericError = transmute(request_check);
-    let disconnect = libc::dlsym(LIBXCB.0, c_string!("xcb_disconnect"));
-    if disconnect.is_null() { return Xcb::invalid() }
-    let disconnect: unsafe extern "C" fn(*mut ConnectionPtr) = transmute(disconnect);
-    let flush = libc::dlsym(LIBXCB.0, c_string!("xcb_flush"));
-    if flush.is_null() { return Xcb::invalid() }
-    let flush: unsafe extern "C" fn(*mut ConnectionPtr) -> raw::c_int = transmute(flush);
-    let generate_id = libc::dlsym(LIBXCB.0, c_string!("xcb_generate_id"));
-    if generate_id.is_null() { return Xcb::invalid() }
-    let generate_id: unsafe extern "C" fn(*mut ConnectionPtr) -> u32 = transmute(generate_id);
-    let create_window = libc::dlsym(LIBXCB.0, c_string!("xcb_create_window_checked"));
-    if create_window.is_null() { return Xcb::invalid() }
-    let create_window: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbWindow, i16, i16, u16, u16, u16, u16, XcbVisualId, u32, *const ffi::c_void) -> Cookie = transmute(create_window);
-    let map_window = libc::dlsym(LIBXCB.0, c_string!("xcb_map_window_checked"));
-    if map_window.is_null() { return Xcb::invalid() }
-    let map_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie = transmute(map_window);
-    let destroy_window = libc::dlsym(LIBXCB.0, c_string!("xcb_destroy_window"));
-    if destroy_window.is_null() { return Xcb::invalid() }
-    let destroy_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie = transmute(map_window);
-    let discard_reply = libc::dlsym(LIBXCB.0, c_string!("xcb_discard_reply"));
-    if discard_reply.is_null() { return Xcb::invalid() }
-    let discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint) = transmute(discard_reply);
-    let poll_for_event = libc::dlsym(LIBXCB.0, c_string!("xcb_poll_for_event"));
-    if poll_for_event.is_null() { return Xcb::invalid() }
-    let poll_for_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut event::XcbGenericEvent = transmute(poll_for_event);
-    let poll_for_queued_event = libc::dlsym(LIBXCB.0, c_string!("xcb_poll_for_queued_event"));
-    if poll_for_queued_event.is_null() { return Xcb::invalid() }
-    let poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut event::XcbGenericEvent = transmute(poll_for_queued_event);
-    let intern_atom = libc::dlsym(LIBXCB.0, c_string!("xcb_intern_atom"));
-    if intern_atom.is_null() { return Xcb::invalid() }
-    let intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie = transmute(intern_atom);
-    let intern_atom_reply = libc::dlsym(LIBXCB.0, c_string!("xcb_intern_atom_reply"));
-    if intern_atom_reply.is_null() { return Xcb::invalid() }
-    let intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply = transmute(intern_atom_reply);
-    let change_property = libc::dlsym(LIBXCB.0, c_string!("xcb_change_property_checked"));
-    if change_property.is_null() { return Xcb::invalid() }
-    let change_property: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbAtom, XcbAtom, u8, u32, *const ffi::c_void) -> Cookie = transmute(change_property);
+    let request_check = load_fn!("xcb_request_check")?;
+    let disconnect = load_fn!("xcb_disconnect")?;
+    let flush = load_fn!("xcb_flush")?;
+    let generate_id = load_fn!("xcb_generate_id")?;
+    let create_window = load_fn!("xcb_create_window_checked")?;
+    let map_window = load_fn!("xcb_map_window_checked")?;
+    let destroy_window = load_fn!("xcb_destroy_window")?;
+    let discard_reply = load_fn!("xcb_discard_reply")?;
+    let poll_for_event = load_fn!("xcb_poll_for_event")?;
+    let poll_for_queued_event = load_fn!("xcb_poll_for_queued_event")?;
+    let intern_atom = load_fn!("xcb_intern_atom")?;
+    let intern_atom_reply = load_fn!("xcb_intern_atom_reply")?;
+    let change_property = load_fn!("xcb_change_property_checked")?;
 
     // And some non-standard atom values...
     let atom_wm_protocols = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "WM_PROTOCOLS");
-    if atom_wm_protocols == XCB_ATOM_NONE { return Xcb::invalid() }
+    if atom_wm_protocols == XCB_ATOM_NONE { return None }
     let atom_wm_delete_window = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "WM_DELETE_WINDOW");
-    if atom_wm_delete_window == XCB_ATOM_NONE { return Xcb::invalid() }
+    if atom_wm_delete_window == XCB_ATOM_NONE { return None }
     let atom_net_wm_name = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "_NET_WM_NAME");
     let atom_net_wm_pid = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "_NET_WM_PID");
-    if atom_net_wm_pid == XCB_ATOM_NONE { return Xcb::invalid() }
+    if atom_net_wm_pid == XCB_ATOM_NONE { return None }
     let atom_utf8_string = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "UTF8_STRING");
 
-    let err = xcb_connection_has_error(connection);
-    if  err <= 0 {
-        Xcb {
-            connection,
-            screen,
-            atom_wm_protocols,
-            atom_wm_delete_window,
-            atom_net_wm_name: if atom_net_wm_name == XCB_ATOM_NONE { None } else { Some(atom_net_wm_name) },
-            atom_net_wm_pid,
-            atom_utf8_string: if atom_utf8_string == XCB_ATOM_NONE { None } else { Some(atom_utf8_string) },
-            request_check,
-            connection_has_error: xcb_connection_has_error,
-            disconnect,
-            flush,
-            generate_id,
-            create_window,
-            map_window,
-            destroy_window,
-            discard_reply,
-            poll_for_event,
-            poll_for_queued_event,
-            _intern_atom: intern_atom,
-            _intern_atom_reply: intern_atom_reply,
-            change_property,
-        }
-    } else {
-        Xcb::invalid()
-    }
+    Some(Xcb {
+        connection,
+        screen,
+        atom_wm_protocols,
+        atom_wm_delete_window,
+        atom_net_wm_name: if atom_net_wm_name == XCB_ATOM_NONE { None } else { Some(atom_net_wm_name) },
+        atom_net_wm_pid,
+        atom_utf8_string: if atom_utf8_string == XCB_ATOM_NONE { None } else { Some(atom_utf8_string) },
+        request_check,
+        connection_has_error: xcb_connection_has_error,
+        disconnect,
+        flush,
+        generate_id,
+        create_window,
+        map_window,
+        destroy_window,
+        discard_reply,
+        poll_for_event,
+        poll_for_queued_event,
+        _intern_atom: intern_atom,
+        _intern_atom_reply: intern_atom_reply,
+        change_property,
+    })
 }
 
-// Helper fn for calling intern_atom before Xcb has been constructed... (Xcb::intern_atom wraps this)
+/// Helper fn for calling intern_atom before Xcb has been constructed... (Can be wrapped by other functions of `Xcb`
+/// if we need to do that in future)
 fn intern_atom_internal(
     connection: *mut ConnectionPtr,
     intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
@@ -435,5 +404,5 @@ fn intern_atom_internal(
 
 lazy_static::lazy_static! {
     static ref LIBXCB: LibXcb = LibXcb(unsafe { libc::dlopen(c_string!("libxcb.so.1"), libc::RTLD_LOCAL | libc::RTLD_LAZY) });
-    pub(super) static ref XCB: Xcb = unsafe { setup() };
+    pub(super) static ref XCB: Xcb = unsafe { setup().unwrap_or_else(Xcb::invalid) };
 }
