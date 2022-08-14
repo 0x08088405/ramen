@@ -86,9 +86,9 @@ pub(super) struct Xcb {
     screen: *mut Screen,
     pub(super) atom_wm_protocols: XcbAtom,
     pub(super) atom_wm_delete_window: XcbAtom,
-    pub(super) atom_net_wm_name: Option<XcbAtom>,
+    pub(super) atom_net_wm_name: XcbAtom,
     pub(super) atom_net_wm_pid: XcbAtom,
-    pub(super) atom_utf8_string: Option<XcbAtom>,
+    pub(super) atom_utf8_string: XcbAtom,
     request_check: unsafe extern "C" fn(*mut ConnectionPtr, Cookie) -> *mut XcbGenericError,
     connection_has_error: unsafe extern "C" fn(*mut ConnectionPtr) -> raw::c_int,
     disconnect: unsafe extern "C" fn(*mut ConnectionPtr),
@@ -120,9 +120,9 @@ impl Xcb {
             screen: ptr::null_mut(),
             atom_wm_protocols: 0,
             atom_wm_delete_window: 0,
-            atom_net_wm_name: None,
+            atom_net_wm_name: 0,
             atom_net_wm_pid: 0,
-            atom_utf8_string: None,
+            atom_utf8_string: 0,
             request_check: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             connection_has_error: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             disconnect: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
@@ -347,23 +347,25 @@ unsafe fn setup() -> Option<Xcb> {
     let change_property = load_fn!("xcb_change_property_checked")?;
 
     // And some non-standard atom values...
-    let atom_wm_protocols = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "WM_PROTOCOLS");
+    let atom_wm_protocols = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, "WM_PROTOCOLS");
     if atom_wm_protocols == XCB_ATOM_NONE { return None }
-    let atom_wm_delete_window = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "WM_DELETE_WINDOW");
+    let atom_wm_delete_window = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, "WM_DELETE_WINDOW");
     if atom_wm_delete_window == XCB_ATOM_NONE { return None }
-    let atom_net_wm_name = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "_NET_WM_NAME");
-    let atom_net_wm_pid = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "_NET_WM_PID");
+    let atom_net_wm_name = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, "_NET_WM_NAME");
+    if atom_wm_delete_window == XCB_ATOM_NONE { return None }
+    let atom_net_wm_pid = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, "_NET_WM_PID");
     if atom_net_wm_pid == XCB_ATOM_NONE { return None }
-    let atom_utf8_string = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, true, "UTF8_STRING");
+    let atom_utf8_string = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, "UTF8_STRING");
+    if atom_wm_delete_window == XCB_ATOM_NONE { return None }
 
     Some(Xcb {
         connection,
         screen,
         atom_wm_protocols,
         atom_wm_delete_window,
-        atom_net_wm_name: if atom_net_wm_name == XCB_ATOM_NONE { None } else { Some(atom_net_wm_name) },
+        atom_net_wm_name,
         atom_net_wm_pid,
-        atom_utf8_string: if atom_utf8_string == XCB_ATOM_NONE { None } else { Some(atom_utf8_string) },
+        atom_utf8_string,
         request_check,
         connection_has_error: xcb_connection_has_error,
         disconnect,
@@ -383,17 +385,17 @@ unsafe fn setup() -> Option<Xcb> {
 
 /// Helper fn for calling intern_atom before Xcb has been constructed... (Can be wrapped by other functions of `Xcb`
 /// if we need to do that in future)
+/// Note: this will always set `only_if_exists` to false; I can't imagine we'll ever have a use-case for setting it to true.
 fn intern_atom_internal(
     connection: *mut ConnectionPtr,
     intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
     intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply,
     discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint),
-    only_if_exists: bool,
     name: &str,
 ) -> XcbAtom {
     unsafe {
         // TODO: how to check this error correctly?
-        let cookie = (intern_atom)(connection, only_if_exists.into(), name.bytes().len() as _, name.as_ptr().cast());
+        let cookie = (intern_atom)(connection, false.into(), name.bytes().len() as _, name.as_ptr().cast());
         let mut err: *mut XcbGenericError = ptr::null_mut();
         let reply = (intern_atom_reply)(connection, cookie, (&mut err) as _);
         let atom = (*reply).atom;

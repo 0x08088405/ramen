@@ -36,21 +36,18 @@ impl Window {
             );
 
             // Try to write the requested window title to the WM_NAME and _NET_WM_NAME properties
-            // Note: _NET_WM_NAME must be of type UTF8_STRING. We can only write it if UTF8_STRING prop type exists on
-            // the user's system. If it doesn't exist, and the title contains multibyte UTF8 characters, AND the user's
-            // system locale is not UTF8, then the title won't render properly. I don't care and neither should you.
+            // Note: multibyte characters won't render correctly in WM_NAME, but any correctly-implemented WM will
+            // prioritise using _NET_WM_NAME which is UTF-8 as standard, that's why it's better to write both.
             let title = builder.title.as_ref();
-            if let (Some(atom_net_wm_name), Some(atom_utf8_string)) = (XCB.atom_net_wm_name, XCB.atom_utf8_string) {
-                XCB.change_property(
-                    ffi::XCB_PROP_MODE_REPLACE,
-                    id,
-                    atom_net_wm_name,
-                    atom_utf8_string,
-                    8,
-                    title.bytes().len() as _,
-                    title.as_ptr().cast(),
-                );
-            }
+            XCB.change_property(
+                ffi::XCB_PROP_MODE_REPLACE,
+                id,
+                XCB.atom_net_wm_name,
+                XCB.atom_utf8_string,
+                8,
+                title.bytes().len() as _,
+                title.as_ptr().cast(),
+            );
             XCB.change_property(
                 ffi::XCB_PROP_MODE_REPLACE,
                 id,
