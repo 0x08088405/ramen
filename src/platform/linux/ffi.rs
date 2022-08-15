@@ -347,16 +347,11 @@ unsafe fn setup() -> Option<Xcb> {
     let change_property = load_fn!("xcb_change_property_checked")?;
 
     // And some non-standard atom values...
-    let atom_wm_protocols = intern_atom_internal(connection, intern_atom, intern_atom_reply, "WM_PROTOCOLS");
-    if atom_wm_protocols == XCB_ATOM_NONE { return None }
-    let atom_wm_delete_window = intern_atom_internal(connection, intern_atom, intern_atom_reply, "WM_DELETE_WINDOW");
-    if atom_wm_delete_window == XCB_ATOM_NONE { return None }
-    let atom_net_wm_name = intern_atom_internal(connection, intern_atom, intern_atom_reply, "_NET_WM_NAME");
-    if atom_wm_delete_window == XCB_ATOM_NONE { return None }
-    let atom_net_wm_pid = intern_atom_internal(connection, intern_atom, intern_atom_reply, "_NET_WM_PID");
-    if atom_net_wm_pid == XCB_ATOM_NONE { return None }
-    let atom_utf8_string = intern_atom_internal(connection, intern_atom, intern_atom_reply, "UTF8_STRING");
-    if atom_wm_delete_window == XCB_ATOM_NONE { return None }
+    let atom_wm_protocols = intern_atom_internal(connection, intern_atom, intern_atom_reply, "WM_PROTOCOLS")?;
+    let atom_wm_delete_window = intern_atom_internal(connection, intern_atom, intern_atom_reply, "WM_DELETE_WINDOW")?;
+    let atom_net_wm_name = intern_atom_internal(connection, intern_atom, intern_atom_reply, "_NET_WM_NAME")?;
+    let atom_net_wm_pid = intern_atom_internal(connection, intern_atom, intern_atom_reply, "_NET_WM_PID")?;
+    let atom_utf8_string = intern_atom_internal(connection, intern_atom, intern_atom_reply, "UTF8_STRING")?;
 
     Some(Xcb {
         connection,
@@ -391,13 +386,13 @@ fn intern_atom_internal(
     intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
     intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply,
     name: &str,
-) -> XcbAtom {
+) -> Option<XcbAtom> {
     unsafe {
-        // TODO: how to check this error correctly?
         let cookie = (intern_atom)(connection, false.into(), name.bytes().len() as _, name.as_ptr().cast());
         let mut err: *mut XcbGenericError = ptr::null_mut();
         let reply = (intern_atom_reply)(connection, cookie, (&mut err) as _);
-        let atom = (*reply).atom;
+        let atom = if reply.is_null() { None } else { if (*reply).atom == XCB_ATOM_NONE { None } else { Some((*reply).atom) } };
+        libc::free(reply as _);
         libc::free(err as _);
         atom
     }
