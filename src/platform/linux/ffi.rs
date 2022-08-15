@@ -347,15 +347,15 @@ unsafe fn setup() -> Option<Xcb> {
     let change_property = load_fn!("xcb_change_property_checked")?;
 
     // And some non-standard atom values...
-    let atom_wm_protocols = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, "WM_PROTOCOLS");
+    let atom_wm_protocols = intern_atom_internal(connection, intern_atom, intern_atom_reply, "WM_PROTOCOLS");
     if atom_wm_protocols == XCB_ATOM_NONE { return None }
-    let atom_wm_delete_window = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, "WM_DELETE_WINDOW");
+    let atom_wm_delete_window = intern_atom_internal(connection, intern_atom, intern_atom_reply, "WM_DELETE_WINDOW");
     if atom_wm_delete_window == XCB_ATOM_NONE { return None }
-    let atom_net_wm_name = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, "_NET_WM_NAME");
+    let atom_net_wm_name = intern_atom_internal(connection, intern_atom, intern_atom_reply, "_NET_WM_NAME");
     if atom_wm_delete_window == XCB_ATOM_NONE { return None }
-    let atom_net_wm_pid = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, "_NET_WM_PID");
+    let atom_net_wm_pid = intern_atom_internal(connection, intern_atom, intern_atom_reply, "_NET_WM_PID");
     if atom_net_wm_pid == XCB_ATOM_NONE { return None }
-    let atom_utf8_string = intern_atom_internal(connection, intern_atom, intern_atom_reply, discard_reply, "UTF8_STRING");
+    let atom_utf8_string = intern_atom_internal(connection, intern_atom, intern_atom_reply, "UTF8_STRING");
     if atom_wm_delete_window == XCB_ATOM_NONE { return None }
 
     Some(Xcb {
@@ -390,7 +390,6 @@ fn intern_atom_internal(
     connection: *mut ConnectionPtr,
     intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
     intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply,
-    discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint),
     name: &str,
 ) -> XcbAtom {
     unsafe {
@@ -399,7 +398,7 @@ fn intern_atom_internal(
         let mut err: *mut XcbGenericError = ptr::null_mut();
         let reply = (intern_atom_reply)(connection, cookie, (&mut err) as _);
         let atom = (*reply).atom;
-        (discard_reply)(connection, cookie.seq);
+        libc::free(err as _);
         atom
     }
 }
