@@ -13,15 +13,30 @@ impl Window {
         // This is recoverable - for example, the user might want to try Wayland setup if this fails.
         if XCB.is_valid() {
             // Generate an ID and spawn a window with that ID
-            let id = XCB.generate_id();
+            let id = match XCB.generate_id() {
+                // xcb_generate_id returns -1 on any type of failure, most likely because it has run out of
+                // resources to fulfil requests for new IDs. It could also mean the connection has been closed.
+                Some(id) => id,
+                None => return Err(Error::SystemResources),
+            };
             let value_mask = ffi::XCB_CW_BACK_PIXEL | ffi::XCB_CW_EVENT_MASK;
             let value_list = &[
                 XCB.white_pixel(),
                 ffi::XCB_EVENT_MASK_KEY_PRESS | ffi::XCB_EVENT_MASK_KEY_RELEASE | ffi::XCB_EVENT_MASK_BUTTON_PRESS | ffi::XCB_EVENT_MASK_BUTTON_RELEASE,
             ];
-            if XCB.create_window(id, 1, 1, 800, 608, 1, value_mask, value_list).is_err() {
-                // xcb_create_window failed for some reason, presumably a bad user param
-                return Err(Error::Invalid)
+            match XCB.create_window(id, 1, 1, 800, 608, 1, value_mask, value_list) {
+                // Reasons CreateWindow may fail are:
+                // Alloc - maps to Error::OutOfMemory
+                // Colormap - we don't currently pass a colormap
+                // Cursor - we do not pass a Cursor
+                // IDChoice - we got our ID straight from xcb_generate_id and didn't use it for anything else
+                // Match - bad configuration of user params, so maps to Error::Invalid
+                // Pixmap - we don't currently pass a pixmap
+                // Value - bad value for a user param, so maps to Error::Invalid
+                // Window - all window IDs we use are checked in advance
+                Ok(()) => (),
+                Err(ffi::Error(ffi::XCB_ALLOC)) => return Err(Error::OutOfMemory),
+                Err(_) => return Err(Error::Invalid),
             }
 
             // Add WM_DELETE_WINDOW to WM_PROTOCOLS - important so we can hook the user clicking the X button
@@ -70,9 +85,10 @@ impl Window {
                 (&pid) as *const i32 as _,
             );
             
-            // Flush FFI requests. If this fails, it means the connection was invalidated at some point since we
-            // opened it. The most plausible cause of this would be a lack of system resources.
+            // Flush FFI requests. If this fails, it can only mean that the connection was invalidated at some point
+            // since we opened it. The most plausible cause of this would be a lack of system resources.
             if XCB.flush().is_err() {
+                // No point trying to destroy the window here if the connection is already closed...
                 return Err(Error::SystemResources)
             }
 

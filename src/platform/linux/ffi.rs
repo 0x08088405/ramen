@@ -4,7 +4,7 @@ pub(super) use event::Event;
 use std::{ffi, mem::transmute, os::raw, ptr};
 
 #[derive(Debug)]
-pub(super) struct Error(raw::c_int);
+pub(super) struct Error(pub(super) raw::c_int);
 
 const XCB_WINDOW_CLASS_INPUT_OUTPUT: u16 = 1;
 
@@ -29,6 +29,8 @@ pub(super) const XCB_EVENT_MASK_KEY_PRESS: u32 = 1;
 pub(super) const XCB_EVENT_MASK_KEY_RELEASE: u32 = 2;
 pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
 pub(super) const XCB_EVENT_MASK_BUTTON_RELEASE: u32 = 8;
+
+pub(super) const XCB_ALLOC: raw::c_int = 11;
 
 #[repr(C)]
 struct XcbGenericError {
@@ -164,8 +166,13 @@ impl Xcb {
     }
 
     /// Calls `xcb_generate_id`. Generating an ID is required to create anything which needs an ID, such as a window.
-    pub(super) fn generate_id(&self) -> u32 {
-        unsafe { (self.generate_id)(self.connection) }
+    /// 
+    /// `None` indicates the function failed, either because the connection is invalid or the system is out of resources.
+    pub(super) fn generate_id(&self) -> Option<u32> {
+        unsafe {
+            let id = (self.generate_id)(self.connection);
+            if id == u32::MAX { None } else { Some(id) }
+        }
     }
 
     /// Calls `xcb_create_window_checked` with the given parameters.
