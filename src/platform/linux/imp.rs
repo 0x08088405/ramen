@@ -70,10 +70,10 @@ impl Window {
                 (&pid) as *const i32 as _,
             );
             
-            // Flush FFI requests. I'm not really sure what condition would cause an error here, if one even exists.
+            // Flush FFI requests. If this fails, it means the connection was invalidated at some point since we
+            // opened it. The most plausible cause of this would be a lack of system resources.
             if XCB.flush().is_err() {
-                let _ = XCB.destroy_window(id);
-                return Err(Error::Invalid)
+                return Err(Error::SystemResources)
             }
 
             // And finally, try to map the window to the screen
