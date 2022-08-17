@@ -95,6 +95,7 @@ impl Window {
             // And finally, try to map the window to the screen
             // If successful the window will become visible at this point.
             if XCB.map_window(id).is_err() {
+                // Can only fail due to "Window" error, so I think this is unreachable in practice
                 let _ = XCB.destroy_window(id);
                 return Err(Error::Invalid)
             }
