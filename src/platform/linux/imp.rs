@@ -10,7 +10,7 @@ lazy_static::lazy_static! {
 
 pub(crate) struct Window {
     handle: ffi::XcbWindow,
-    event_queue: Vec<Event>,
+    event_buffer: Vec<Event>,
 }
 
 impl Window {
@@ -110,7 +110,7 @@ impl Window {
             // We do this even if the queue probably won't be used, as it's the soundest way to ensure memory gets cleaned up.
             let _ = mutex_lock(&EVENT_QUEUE).insert(id, Vec::new());
             
-            Ok(Window { handle: id, event_queue: Vec::with_capacity(64) })
+            Ok(Window { handle: id, event_buffer: Vec::with_capacity(64) })
         } else {
             match XCB.setup_error() {
                 ffi::SetupError::DlError(s) => Err(Error::Text(s.into())),
@@ -125,7 +125,7 @@ impl Window {
     }
 
     pub(crate) fn events(&self) -> &[Event] {
-        &self.event_queue
+        &self.event_buffer
     }
 
     pub(crate) fn poll_events(&mut self) {
@@ -134,21 +134,21 @@ impl Window {
         let mut map = mutex_lock(&EVENT_QUEUE);
 
         // Clear our event buffer of the previous set of events
-        self.event_queue.clear();
+        self.event_buffer.clear();
 
         // Fill our event buffer with any events which may have been stored in the global event queue,
         // also clearing them from the global queue
         // Note: this queue SHOULD always exist, but it's possible some bad or malicious user code might get a
         // `None` result, so it's better to check and take no action if there's no queue to copy from...
         if let Some(queue) = map.get_mut(&self.handle) {
-            std::mem::swap(&mut self.event_queue, queue);
+            std::mem::swap(&mut self.event_buffer, queue);
         }
 
         // Call `poll_event` once, which populates XCB's internal linked list from the connection
         if let Some((event, window)) = XCB.poll_event().and_then(process_event) {
             // We have a ramen event relevant to some window - but is it this one?
             if window == self.handle {
-                self.event_queue.push(event);
+                self.event_buffer.push(event);
             } else if let Some(queue) = map.get_mut(&window) {
                 queue.push(event);
             }
@@ -157,7 +157,7 @@ impl Window {
             if let Some((event, window)) = process_event(event) {
                 // We have a ramen event relevant to some window - but is it this one?
                 if window == self.handle {
-                    self.event_queue.push(event);
+                    self.event_buffer.push(event);
                 } else if let Some(queue) = map.get_mut(&window) {
                     queue.push(event);
                 }
