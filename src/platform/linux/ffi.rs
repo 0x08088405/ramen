@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)] // I know there are too many arguments, tell that to X11
+
 mod event;
 pub(super) use event::Event;
 
