@@ -29,6 +29,7 @@ pub(super) const XCB_EVENT_MASK_KEY_PRESS: u32 = 1;
 pub(super) const XCB_EVENT_MASK_KEY_RELEASE: u32 = 2;
 pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
 pub(super) const XCB_EVENT_MASK_BUTTON_RELEASE: u32 = 8;
+pub(super) const XCB_EVENT_MASK_FOCUS_CHANGE: u32 = 2097152;
 
 pub(super) const XCB_NONE: raw::c_int = 0;
 pub(super) const XCB_ALLOC: raw::c_int = 11;

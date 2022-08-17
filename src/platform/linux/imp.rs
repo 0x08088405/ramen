@@ -32,7 +32,8 @@ impl Window {
             let value_mask = ffi::XCB_CW_BACK_PIXEL | ffi::XCB_CW_EVENT_MASK;
             let value_list = &[
                 XCB.white_pixel(),
-                ffi::XCB_EVENT_MASK_KEY_PRESS | ffi::XCB_EVENT_MASK_KEY_RELEASE | ffi::XCB_EVENT_MASK_BUTTON_PRESS | ffi::XCB_EVENT_MASK_BUTTON_RELEASE,
+                ffi::XCB_EVENT_MASK_KEY_PRESS | ffi::XCB_EVENT_MASK_KEY_RELEASE | ffi::XCB_EVENT_MASK_BUTTON_PRESS | ffi::XCB_EVENT_MASK_BUTTON_RELEASE |
+                    ffi::XCB_EVENT_MASK_FOCUS_CHANGE,
             ];
             match XCB.create_window(id, 1, 1, 800, 608, 1, value_mask, value_list) {
                 // Reasons CreateWindow may fail are:
@@ -189,6 +190,9 @@ fn process_event(ev: ffi::Event) -> Option<(Event, ffi::XcbWindow)> {
                 } else {
                     None
                 }
+            },
+            ffi::Event::Focus { window, state } => {
+                Some((Event::Focus(state), window))
             },
             //_ => None,
         }
