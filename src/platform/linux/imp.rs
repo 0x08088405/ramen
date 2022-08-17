@@ -100,9 +100,14 @@ impl Window {
             }
             Ok(Window { handle: id, event_queue: Vec::with_capacity(64) })
         } else {
-            match ffi::dl_error() {
-                Some(s) => Err(Error::Text(s.into())),
-                None => Err(Error::Unsupported),
+            match XCB.setup_error() {
+                ffi::SetupError::DlError(s) => Err(Error::Text(s.into())),
+                ffi::SetupError::NoScreens => Err(Error::Unsupported),
+                ffi::SetupError::ConnError(ffi::Error(ffi::XCB_CONN_CLOSED_EXT_NOTSUPPORTED)) => Err(Error::Unsupported),
+                ffi::SetupError::ConnError(ffi::Error(ffi::XCB_CONN_CLOSED_MEM_INSUFFICIENT)) => Err(Error::OutOfMemory),
+                ffi::SetupError::ConnError(_) => Err(Error::Invalid),
+                ffi::SetupError::XcbError(ffi::Error(ffi::XCB_ALLOC)) => Err(Error::OutOfMemory),
+                ffi::SetupError::XcbError(_) => Err(Error::Invalid),
             }
         }
     }

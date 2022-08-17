@@ -3,7 +3,7 @@ pub(super) use event::Event;
 
 use std::{ffi, mem::transmute, os::raw, ptr};
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct Error(pub(super) raw::c_int);
 
 const XCB_WINDOW_CLASS_INPUT_OUTPUT: u16 = 1;
@@ -30,7 +30,10 @@ pub(super) const XCB_EVENT_MASK_KEY_RELEASE: u32 = 2;
 pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
 pub(super) const XCB_EVENT_MASK_BUTTON_RELEASE: u32 = 8;
 
+pub(super) const XCB_NONE: raw::c_int = 0;
 pub(super) const XCB_ALLOC: raw::c_int = 11;
+pub(super) const XCB_CONN_CLOSED_EXT_NOTSUPPORTED: raw::c_int = 2;
+pub(super) const XCB_CONN_CLOSED_MEM_INSUFFICIENT: raw::c_int = 3;
 
 #[repr(C)]
 struct XcbGenericError {
@@ -59,7 +62,7 @@ macro_rules! c_string {
 }
 
 /// Calls dlerror, returning the error string or None if there's no error
-pub(super) fn dl_error() -> Option<&'static str> {
+fn dl_error() -> Option<&'static str> {
     unsafe {
         let start = libc::dlerror() as *mut u8;
         if start.is_null() {
@@ -81,6 +84,20 @@ unsafe extern "C" fn do_not_call() -> ! {
 
 /// Referent type for xcb_connection_t
 enum ConnectionPtr {}
+
+#[derive(Clone, Copy, Debug)]
+/// Error type specifically for Xcb setup()
+pub(super) enum SetupError {
+    DlError(&'static str),
+    XcbError(Error),
+    ConnError(Error),
+    NoScreens,
+}
+impl From<Error> for SetupError {
+    fn from(e: Error) -> Self {
+        Self::XcbError(e)
+    }
+}
 
 /// XCB connection wrapper
 pub(super) struct Xcb {
@@ -105,6 +122,7 @@ pub(super) struct Xcb {
     _intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
     _intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply,
     change_property: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbAtom, XcbAtom, u8, u32, *const ffi::c_void) -> Cookie,
+    setup_error: SetupError,
 }
 unsafe impl Send for Xcb {}
 unsafe impl Sync for Xcb {}
@@ -116,7 +134,7 @@ impl Drop for Xcb {
 }
 impl Xcb {
     /// If there's a problem during setup, this function will be called to create an Xcb in an invalid state.
-    fn invalid() -> Self {
+    fn invalid(err: SetupError) -> Self {
         Self {
             connection: ptr::null_mut(),
             screen: ptr::null_mut(),
@@ -139,6 +157,7 @@ impl Xcb {
             _intern_atom: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             _intern_atom_reply: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
             change_property: unsafe { transmute(do_not_call as unsafe extern "C" fn() -> !) },
+            setup_error: err,
         }
     }
 
@@ -149,6 +168,17 @@ impl Xcb {
     /// See manual page on `xcb_connection_has_error` for more information.
     pub(super) fn is_valid(&self) -> bool {
         !self.connection.is_null() && unsafe { (self.connection_has_error)(self.connection) } <= 0
+    }
+
+    /// Gets the error that resulted from internal XCB setup. If setup was successful, this will return XcbError(XCB_NONE).
+    /// 
+    /// Do not use this to check if setup was successful - that's what `is_valid()` is for. Only call this after
+    /// `is_valid()` returns false.
+    /// 
+    /// On the other hand, if `is_valid()` returns false but this function returns XCB_NONE, that means the connection
+    /// got invalidated in between internal setup and the current moment.
+    pub(super) fn setup_error(&self) -> SetupError {
+        self.setup_error
     }
 
     /// Returns the screen's white pixel value on this particular system.
@@ -308,16 +338,18 @@ struct Screen {
     allowed_depths_len: u8,
 }
 
-unsafe fn setup() -> Option<Xcb> {
+unsafe fn setup() -> Result<Xcb, SetupError> {
     macro_rules! load_fn {
         ($name:literal) => {{
             let request_check = libc::dlsym(LIBXCB.0, c_string!($name));
-            if request_check.is_null() { None } else { Some(transmute(request_check)) }
+            if request_check.is_null() { Err(dl_error().map(SetupError::DlError).unwrap_or(SetupError::XcbError(Error(XCB_ALLOC)))) } else { Ok(transmute(request_check)) }
         }}
     }
 
+    let no_dlerror = "(no dlerror provided)";
+
     // Check validity of our connection to libxcb.so and existence of functions we actually need here
-    if !LIBXCB.is_valid() { return None }
+    if !LIBXCB.is_valid() { return Err(SetupError::DlError(dl_error().unwrap_or(no_dlerror))) }
     enum XcbSetup {}
     let xcb_connect: unsafe extern "C" fn(*const raw::c_char, *mut raw::c_int) -> *mut ConnectionPtr = load_fn!("xcb_connect")?;
     let xcb_connection_has_error: unsafe extern "C" fn(*mut ConnectionPtr) -> raw::c_int = load_fn!("xcb_connection_has_error")?;
@@ -328,15 +360,17 @@ unsafe fn setup() -> Option<Xcb> {
     // Create an XCB connection
     let connection = xcb_connect(ptr::null(), ptr::null_mut());
     let err = xcb_connection_has_error(connection);
-    if err > 0 { return None }
+    if err > 0 {
+        return Err(SetupError::ConnError(Error(err)));
+    }
 
     // Iterate screens
     let setup = xcb_get_setup(connection);
     let length = xcb_setup_roots_length(setup);
-    if length <= 0 { return None }
+    if length <= 0 { return Err(SetupError::NoScreens) }
     let iter: ScreenIterator = xcb_setup_roots_iterator(setup);
     let screen = iter.data;
-    if screen.is_null() { return None }
+    if screen.is_null() { return Err(SetupError::NoScreens) }
 
     // Define other functions we'll need
     let request_check = load_fn!("xcb_request_check")?;
@@ -360,7 +394,7 @@ unsafe fn setup() -> Option<Xcb> {
     let atom_net_wm_pid = intern_atom_internal(connection, intern_atom, intern_atom_reply, "_NET_WM_PID")?;
     let atom_utf8_string = intern_atom_internal(connection, intern_atom, intern_atom_reply, "UTF8_STRING")?;
 
-    Some(Xcb {
+    Ok(Xcb {
         connection,
         screen,
         atom_wm_protocols,
@@ -382,6 +416,7 @@ unsafe fn setup() -> Option<Xcb> {
         _intern_atom: intern_atom,
         _intern_atom_reply: intern_atom_reply,
         change_property,
+        setup_error: SetupError::XcbError(Error(XCB_NONE)),
     })
 }
 
@@ -393,12 +428,13 @@ fn intern_atom_internal(
     intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
     intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply,
     name: &str,
-) -> Option<XcbAtom> {
+) -> Result<XcbAtom, Error> {
     unsafe {
         let cookie = (intern_atom)(connection, false.into(), name.bytes().len() as _, name.as_ptr().cast());
         let mut err: *mut XcbGenericError = ptr::null_mut();
+        let error = if err.is_null() { Error(XCB_ALLOC) } else { Error((*err).error_code.into()) };
         let reply = (intern_atom_reply)(connection, cookie, (&mut err) as _);
-        let atom = if reply.is_null() { None } else { if (*reply).atom == XCB_ATOM_NONE { None } else { Some((*reply).atom) } };
+        let atom = if reply.is_null() { Err(error) } else { if (*reply).atom == XCB_ATOM_NONE { Err(error) } else { Ok((*reply).atom) } };
         libc::free(reply as _);
         libc::free(err as _);
         atom
