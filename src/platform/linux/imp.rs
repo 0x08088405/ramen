@@ -8,6 +8,10 @@ lazy_static::lazy_static! {
     static ref EVENT_QUEUE: Mutex<HashMap<ffi::XcbWindow, Vec<Event>>> = Mutex::new(HashMap::with_capacity(8));
 }
 
+/// The initial capacity for any Vec<Event>
+/// Event is around 8 bytes in size, so it's fairly costless for this to be a large starting capacity.
+const QUEUE_SIZE: usize = 256;
+
 pub(crate) struct Window {
     handle: ffi::XcbWindow,
     event_buffer: Vec<Event>,
@@ -108,9 +112,9 @@ impl Window {
 
             // Now we'll insert an entry into the EVENT_QUEUE hashmap for this window we've created.
             // We do this even if the queue probably won't be used, as it's the soundest way to ensure memory gets cleaned up.
-            let _ = mutex_lock(&EVENT_QUEUE).insert(id, Vec::new());
+            let _ = mutex_lock(&EVENT_QUEUE).insert(id, Vec::with_capacity(QUEUE_SIZE));
             
-            Ok(Window { handle: id, event_buffer: Vec::with_capacity(64) })
+            Ok(Window { handle: id, event_buffer: Vec::with_capacity(QUEUE_SIZE) })
         } else {
             match XCB.setup_error() {
                 ffi::SetupError::DlError(s) => Err(Error::Text(s.into())),
