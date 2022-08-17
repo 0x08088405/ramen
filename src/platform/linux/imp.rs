@@ -1,6 +1,12 @@
 // TODO: I suppose we'll need some method of deciding at runtime whether to use x11 or wayland? This is just x11
-use crate::{error::Error, event::{CloseReason, Event}, window};
+use crate::{error::Error, event::{CloseReason, Event}, util::sync::{Mutex, mutex_lock}, window};
 use super::ffi::{self, XCB};
+
+use std::collections::HashMap;
+
+lazy_static::lazy_static! {
+    static ref EVENT_QUEUE: Mutex<HashMap<ffi::XcbWindow, Vec<Event>>> = Mutex::new(HashMap::with_capacity(8));
+}
 
 pub(crate) struct Window {
     handle: ffi::XcbWindow,
@@ -99,6 +105,11 @@ impl Window {
                 let _ = XCB.destroy_window(id);
                 return Err(Error::Invalid)
             }
+
+            // Now we'll insert an entry into the EVENT_QUEUE hashmap for this window we've created.
+            // We do this even if the queue probably won't be used, as it's the soundest way to ensure memory gets cleaned up.
+            let _ = mutex_lock(&EVENT_QUEUE).insert(id, Vec::new());
+            
             Ok(Window { handle: id, event_queue: Vec::with_capacity(64) })
         } else {
             match XCB.setup_error() {
@@ -118,13 +129,38 @@ impl Window {
     }
 
     pub(crate) fn poll_events(&mut self) {
+        // First: lock the global event queue, which is used as backup storage for events
+        // which have been pulled but are not immediately relevant
+        let mut map = mutex_lock(&EVENT_QUEUE);
+
+        // Clear our event buffer of the previous set of events
         self.event_queue.clear();
-        if let Some(event) = XCB.poll_event().and_then(process_event) {
-            self.event_queue.push(event);
+
+        // Fill our event buffer with any events which may have been stored in the global event queue,
+        // also clearing them from the global queue
+        // Note: this queue SHOULD always exist, but it's possible some bad or malicious user code might get a
+        // `None` result, so it's better to check and take no action if there's no queue to copy from...
+        if let Some(queue) = map.get_mut(&self.handle) {
+            std::mem::swap(&mut self.event_queue, queue);
+        }
+
+        // Call `poll_event` once, which populates XCB's internal linked list from the connection
+        if let Some((event, window)) = XCB.poll_event().and_then(process_event) {
+            // We have a ramen event relevant to some window - but is it this one?
+            if window == self.handle {
+                self.event_queue.push(event);
+            } else if let Some(queue) = map.get_mut(&window) {
+                queue.push(event);
+            }
         }
         while let Some(event) = XCB.poll_queued_event() {
-            if let Some(event) = process_event(event) {
-                self.event_queue.push(event);
+            if let Some((event, window)) = process_event(event) {
+                // We have a ramen event relevant to some window - but is it this one?
+                if window == self.handle {
+                    self.event_queue.push(event);
+                } else if let Some(queue) = map.get_mut(&window) {
+                    queue.push(event);
+                }
             }
         }
     }
@@ -132,6 +168,7 @@ impl Window {
 
 impl Drop for Window {
     fn drop(&mut self) {
+        let _ = mutex_lock(&EVENT_QUEUE).remove(&self.handle);
         if XCB.destroy_window(self.handle).is_ok() {
             let _ = XCB.flush();
         }
@@ -139,12 +176,12 @@ impl Drop for Window {
 }
 
 // For translating an ffi Event to a ramen Event
-fn process_event(ev: ffi::Event) -> Option<Event> {
+fn process_event(ev: ffi::Event) -> Option<(Event, ffi::XcbWindow)> {
     unsafe {
         match ev {
-            ffi::Event::ClientMessage { format, client_data, r#type, .. } => {
+            ffi::Event::ClientMessage { format, client_data, r#type, window } => {
                 if format == 32 && r#type == XCB.atom_wm_protocols && client_data.data32[0] == XCB.atom_wm_delete_window {
-                    Some(Event::CloseRequest(CloseReason::SystemMenu))
+                    Some((Event::CloseRequest(CloseReason::SystemMenu), window))
                 } else {
                     None
                 }
