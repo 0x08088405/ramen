@@ -22,13 +22,34 @@ impl Window {
         // Check if XCB setup failed, possibly due to libxcb or an extension not being installed.
         // This is recoverable - for example, the user might want to try Wayland setup if this fails.
         if XCB.is_valid() {
-            // Generate an ID and spawn a window with that ID
+            // Generate an ID for our new window
             let id = match XCB.generate_id() {
                 // xcb_generate_id returns -1 on any type of failure, most likely because it has run out of
                 // resources to fulfil requests for new IDs. It could also mean the connection has been closed.
                 Some(id) => id,
                 None => return Err(Error::SystemResources),
             };
+
+            // Clear the event queue - this is in case any events are in the queue with this window ID we just generated,
+            // since X may have re-used it from a previous window
+            {
+                // Scope is so we don't hold the mutex longer than necessary
+                let mut map = mutex_lock(&EVENT_QUEUE);
+                if let Some((event, window)) = XCB.poll_event().and_then(process_event) {
+                    if let Some(queue) = map.get_mut(&window) {
+                        queue.push(event);
+                    }
+                }
+                while let Some(event) = XCB.poll_queued_event() {
+                    if let Some((event, window)) = process_event(event) {
+                        if let Some(queue) = map.get_mut(&window) {
+                            queue.push(event);
+                        }
+                    }
+                }
+            }
+
+            // Create the new X window
             let value_mask = ffi::XCB_CW_BACK_PIXEL | ffi::XCB_CW_EVENT_MASK;
             let value_list = &[
                 XCB.white_pixel(),
