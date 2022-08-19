@@ -18,6 +18,10 @@ include = ["/src", "LICENCE.org", "README.org"]
 [dependencies]
 parking_lot = { version = "0.11.2", optional = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+lazy_static = "1.4.0"
+libc = "0.2"
+
 [features]
 default = ["input"]
 input = []
