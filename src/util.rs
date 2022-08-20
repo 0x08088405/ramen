@@ -1,3 +1,59 @@
+macro_rules! load {
+    ($($vis:vis $name:ident($type_name:ident) $($so_name:literal),+ {
+        $(fn $fn_name:ident($($arg_name:ident:$arg_ty:ty),+$(,)?) $(-> $ret:ty)?;)+
+    })+) => {
+        pub(self) enum __anyopaque {}
+        $(
+            #[link_section = ".bss"]
+            $vis static mut $name: ::std::mem::MaybeUninit<$type_name> = ::std::mem::MaybeUninit::uninit();
+            #[repr(C)]
+            $vis struct $type_name {
+                $($fn_name: unsafe extern "system" fn($($arg_ty),+) $(-> $ret)?),+,
+            }
+            impl $type_name {
+                $vis unsafe fn load() -> bool {
+                    static INIT: ::std::sync::Once = ::std::sync::Once::new();
+                    static mut LOADED: bool = false;
+                    INIT.call_once(|| {
+                        let mut fp = $name.as_mut_ptr() as *mut *mut __anyopaque;
+                        let mut handle = ::std::ptr::null_mut();
+                        for name in [$(concat!($so_name, "\0").as_ptr().cast::<c_char>()),+] {
+                            handle = dlopen(name);
+                            if !handle.is_null() { break; }
+                        }
+                        let _ = dlerror();
+                        if handle.is_null() { return; }
+                        for sym in [$(concat!(stringify!($fn_name), "\0").as_ptr().cast::<c_char>()),+] {
+                            *fp = dlsym(handle, sym).cast();
+                            fp = fp.offset(1);
+                        }
+                        LOADED = dlerror().is_null();
+                    });
+                    LOADED
+                }
+            }
+            $(#[inline(always)] $vis unsafe fn $fn_name($($arg_name:$arg_ty),+) $(-> $ret)? {
+                ((&*$name.as_ptr()).$fn_name)($($arg_name),+)
+            })*
+        )*
+    };
+}
+
+
+
+
+
+
+
+
+
+
+// fucking mess below
+
+
+
+
+
 use std::collections::TryReserveError;
 
 pub(crate) trait TryPush<T> {
