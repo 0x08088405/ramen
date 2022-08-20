@@ -1,3 +1,7 @@
+macro_rules! cstr {
+    ($($x:tt)+) => {{ concat!($($x)+, "\0").as_ptr().cast() }};
+}
+
 macro_rules! load {
     ($($vis:vis $name:ident($type_name:ident) $($so_name:literal),+ {
         $(fn $fn_name:ident($($arg_name:ident:$arg_ty:ty),+$(,)?) $(-> $ret:ty)?;)+
@@ -17,13 +21,13 @@ macro_rules! load {
                     INIT.call_once(|| {
                         let mut fp = $name.as_mut_ptr() as *mut *mut __anyopaque;
                         let mut handle = ::std::ptr::null_mut();
-                        for name in [$(concat!($so_name, "\0").as_ptr().cast::<c_char>()),+] {
+                        for name in [$(cstr!($so_name)),+] {
                             handle = dlopen(name);
                             if !handle.is_null() { break; }
                         }
                         let _ = dlerror();
                         if handle.is_null() { return; }
-                        for sym in [$(concat!(stringify!($fn_name), "\0").as_ptr().cast::<c_char>()),+] {
+                        for sym in [$(cstr!(stringify!($fn_name))),+] {
                             *fp = dlsym(handle, sym).cast();
                             fp = fp.offset(1);
                         }
