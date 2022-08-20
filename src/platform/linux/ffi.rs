@@ -1,12 +1,12 @@
 #![allow(bad_style)]
 
-pub use libc::{c_char, c_int};
+pub(super) use libc::{c_char, c_int};
 use libc::{dlopen, dlsym, dlerror};
 
 macro_rules! load {
     ($($vis:vis $name:ident($type_name:ident) $($so_name:literal),+ {
         $(fn $fn_name:ident($($arg_name:ident:$arg_ty:ty),+$(,)?) $(-> $ret:ty)?;)+
-    }),*$(,)?) => {
+    })+) => {
         pub(self) enum __anyopaque {}
         $(
             #[link_section = ".bss"]
@@ -16,7 +16,7 @@ macro_rules! load {
                 $($fn_name: unsafe extern "system" fn($($arg_ty),+) $(-> $ret)?),+,
             }
             impl $type_name {
-                pub unsafe fn load() -> bool {
+                $vis unsafe fn load() -> bool {
                     static INIT: ::std::sync::Once = ::std::sync::Once::new();
                     static mut LOADED: bool = false;
                     INIT.call_once(|| {
@@ -38,13 +38,22 @@ macro_rules! load {
                 }
             }
             $(#[inline(always)] $vis unsafe fn $fn_name($($arg_name:$arg_ty),+) $(-> $ret)? {
-                ((&*xcb.as_ptr()).$fn_name)($($arg_name),+)
+                ((&*$name.as_ptr()).$fn_name)($($arg_name),+)
             })*
         )*
     };
 }
 
 load! {
+    pub(super) xlib(libX11) "libX11.so.6", "libX11.so" {
+        fn XOpenDisplay(display_name: *const c_char) -> *mut Display;
+        fn XDefaultScreen(display: *mut Display) -> c_int;
+        fn XCloseDisplay(display: *mut Display) -> c_int;
+    }
+    pub(super) xlib_xcb(libX11_xcb) "libX11-xcb.so.1", "libX11-xcb.so" {
+        fn XGetXCBConnection(dpy: *mut Display) -> *mut xcb_connection_t;
+        fn XSetEventQueueOwner(dpy: *mut Display, owner: EventQueueOwner);
+    }
     pub(super) xcb(libxcb) "libxcb.so.1", "libxcb.so" {
         fn xcb_connect(displayname: *const c_char, screenp: *mut c_int) -> *mut xcb_connection_t;
         fn xcb_connection_has_error(c: *mut xcb_connection_t) -> c_int;
@@ -52,7 +61,14 @@ load! {
     }
 }
 
+pub(super) enum Display {}
 pub(super) enum xcb_connection_t {}
+
+#[repr(C)]
+pub(super) enum EventQueueOwner {
+    XlibOwnsEventQueue = 0,
+    XCBOwnsEventQueue,
+}
 
 // mod event;
 // pub(super) use event::Event;
