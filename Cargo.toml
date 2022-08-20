@@ -16,10 +16,9 @@ categories = ["api-bindings", "game-development", "game-engines", "gui"]
 include = ["/src", "LICENCE.org", "README.org"]
 
 [dependencies]
-parking_lot = { version = "0.11.2", optional = true }
+parking_lot = { version = "0.11", optional = true }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-lazy_static = "1.4.0"
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [features]
