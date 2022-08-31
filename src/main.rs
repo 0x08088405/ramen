@@ -8,7 +8,8 @@ pub fn main() {
 }
 
 pub fn f() {
-    let mut window = ramen::window::Window::builder().title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏").build().expect("Couldn't build window");
+    let connection = ramen::connection::Connection::new().unwrap();
+    let mut window = ramen::window::Window::builder(connection).title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏").build().expect("Couldn't build window");
     'program: loop {
         window.poll_events();
         for event in window.events() {

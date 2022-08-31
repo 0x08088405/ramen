@@ -1,5 +1,5 @@
 use super::{Controls, Style};
-use crate::{error::Error, platform::imp};
+use crate::{connection::Connection, error::Error, platform::imp};
 
 use std::borrow::Cow;
 
@@ -7,14 +7,16 @@ use std::borrow::Cow;
 ///
 /// To create a builder, use [`Window::builder`](super::Window::builder) or the default implementation.
 pub struct Builder {
+    pub(crate) connection: Connection,
     pub(crate) class_name: Cow<'static, str>,
     pub(crate) style: Style,
     pub(crate) title: Cow<'static, str>,
 }
 
 impl Builder {
-    pub(crate) const fn new(style: Option<Style>) -> Self {
+    pub(crate) const fn new(connection: Connection, style: Option<Style>) -> Self {
         Builder {
+            connection,
             class_name: Cow::Borrowed("ramen_window"),
             style: match style {
                 // Why is `Option::unwrap_or` not const fn?!
@@ -85,11 +87,5 @@ impl Builder {
     pub fn visible(&mut self, visible: bool) -> &mut Self {
         self.style.visible = visible;
         self
-    }
-}
-
-impl Default for Builder {
-    fn default() -> Self {
-        Self::new(None)
     }
 }

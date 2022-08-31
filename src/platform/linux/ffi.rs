@@ -1,6 +1,6 @@
 #![allow(bad_style)]
 
-pub(super) use libc::{c_char, c_int, c_void};
+pub(super) use libc::{c_char, c_int, c_uint, c_void, free, getpid};
 
 use libc::{dlsym, dlerror};
 unsafe fn dlopen(name: *const c_char) -> *mut c_void {
@@ -18,20 +18,80 @@ load! {
         fn XSetEventQueueOwner(dpy: *mut Display, owner: EventQueueOwner);
     }
     pub(super) xcb(libxcb) "libxcb.so.1", "libxcb.so" {
-        fn xcb_connect(displayname: *const c_char, screenp: *mut c_int) -> *mut xcb_connection_t;
+        //fn xcb_connect(displayname: *const c_char, screenp: *mut c_int) -> *mut xcb_connection_t;
         fn xcb_connection_has_error(c: *mut xcb_connection_t) -> c_int;
-        fn xcb_disconnect(c: *mut xcb_connection_t);
+        //fn xcb_disconnect(c: *mut xcb_connection_t);
+        fn xcb_get_setup(c: *mut xcb_connection_t) -> *const xcb_setup_t;
+        fn xcb_setup_roots_iterator(R: *const xcb_setup_t) -> xcb_screen_iterator_t;
+        fn xcb_screen_next(i: *mut xcb_screen_iterator_t);
+
+        fn xcb_flush(c: *mut xcb_connection_t) -> c_int;
+        fn xcb_generate_id(c: *mut xcb_connection_t) -> u32;
+        fn xcb_request_check(c: *mut xcb_connection_t, sequence: c_uint) -> *mut xcb_generic_error_t;
+        fn xcb_create_window_checked(
+            c: *mut xcb_connection_t,
+            depth: u8,
+            wid: xcb_window_t,
+            parent: xcb_window_t,
+            x: i16,
+            y: i16,
+            width: u16,
+            height: u16,
+            border_width: u16,
+            class: u16,
+            visual: xcb_visualid_t,
+            value_mask: u32,
+            value_list: *const u32,
+        ) -> c_uint;
+        fn xcb_change_property(
+            c: *mut xcb_connection_t,
+            mode: u8,
+            window: xcb_window_t,
+            property: xcb_atom_t,
+            r#type: xcb_atom_t,
+            format: u8,
+            data_len: u32,
+            data: *const c_void,
+        ) -> c_uint;
+        fn xcb_map_window_checked(c: *mut xcb_connection_t, window: xcb_window_t) -> c_uint;
+        fn xcb_intern_atom(
+            c: *mut xcb_connection_t,
+            only_if_exists: u8,
+            name_len: u16,
+            name: *const c_char,
+        ) -> c_uint;
+        fn xcb_intern_atom_reply(
+            c: *mut xcb_connection_t,
+            sequence: c_uint,
+            e: *mut *mut xcb_generic_error_t,
+        ) -> *mut xcb_intern_atom_reply_t;
+        fn xcb_poll_for_event(c: *mut xcb_connection_t) -> *mut xcb_generic_event_t;
+        fn xcb_poll_for_queued_event(c: *mut xcb_connection_t) -> *mut xcb_generic_event_t;
+        fn xcb_destroy_window(c: *mut xcb_connection_t, xid: xcb_window_t) -> c_uint;
     }
 }
 
 pub(super) enum Display {}
+pub(super) enum xcb_setup_t {}
 pub(super) enum xcb_connection_t {}
 
 #[repr(C)]
-pub(super) enum EventQueueOwner {
-    XlibOwnsEventQueue = 0,
-    XCBOwnsEventQueue,
-}
+#[allow(dead_code)]
+pub(super) enum EventQueueOwner { XlibOwnsEventQueue = 0, XCBOwnsEventQueue }
+pub(super) type xcb_atom_t = u32;
+pub(super) type xcb_colormap_t = u32;
+pub(super) type xcb_visualid_t = u32;
+pub(super) type xcb_window_t = u32;
+
+pub(super) const XCB_WINDOW_CLASS_INPUT_OUTPUT: u16 = 1;
+pub(super) const XCB_COPY_FROM_PARENT: u8 = 0;
+// pub(super) const XCB_KEY_PRESS: u8 = 2;
+// pub(super) const XCB_KEY_RELEASE: u8 = 3;
+// pub(super) const XCB_BUTTON_PRESS: u8 = 4;
+// pub(super) const XCB_BUTTON_RELEASE: u8 = 5;
+pub(super) const XCB_FOCUS_IN: u8 = 9;
+pub(super) const XCB_FOCUS_OUT: u8 = 10;
+pub(super) const XCB_CLIENT_MESSAGE: u8 = 33;
 
 // mod event;
 // pub(super) use event::Event;
@@ -39,56 +99,139 @@ pub(super) enum EventQueueOwner {
 // use std::{ffi, mem::transmute, os::raw, ptr};
 
 // #[derive(Clone, Copy, Debug)]
-// pub(super) struct Error(pub(super) raw::c_int);
-
-// const XCB_WINDOW_CLASS_INPUT_OUTPUT: u16 = 1;
+// pub(super) struct Error(pub(super) c_int);
 
 // pub(super) type XcbAtom = u32;
 // pub(super) type XcbColourMap = u32;
 // pub(super) type XcbVisualId = u32;
 // pub(super) type XcbWindow = u32;
 
-// pub(super) const XCB_PROP_MODE_REPLACE: u8 = 0;
-// //pub(super) const XCB_PROP_MODE_APPEND: u8 = 1;
-// //pub(super) const XCB_PROP_MODE_PREPEND: u8 = 2;
+pub(super) const XCB_PROP_MODE_REPLACE: u8 = 0;
+//pub(super) const XCB_PROP_MODE_APPEND: u8 = 1;
+//pub(super) const XCB_PROP_MODE_PREPEND: u8 = 2;
 
-// pub(super) const XCB_ATOM_NONE: XcbAtom = 0;
-// pub(super) const XCB_ATOM_ATOM: XcbAtom = 4;
-// pub(super) const XCB_ATOM_CARDINAL: XcbAtom = 6;
-// pub(super) const XCB_ATOM_STRING: XcbAtom = 31;
-// pub(super) const XCB_ATOM_WM_NAME: XcbAtom = 39;
+//pub(super) const XCB_ATOM_NONE: xcb_atom_t = 0;
+pub(super) const XCB_ATOM_ATOM: xcb_atom_t = 4;
+pub(super) const XCB_ATOM_CARDINAL: xcb_atom_t = 6;
+pub(super) const XCB_ATOM_STRING: xcb_atom_t = 31;
+pub(super) const XCB_ATOM_WM_NAME: xcb_atom_t = 39;
 
-// pub(super) const XCB_CW_BACK_PIXEL: u32 = 2;
-// pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
-// pub(super) const XCB_EVENT_MASK_KEY_PRESS: u32 = 1;
-// pub(super) const XCB_EVENT_MASK_KEY_RELEASE: u32 = 2;
-// pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
-// pub(super) const XCB_EVENT_MASK_BUTTON_RELEASE: u32 = 8;
-// pub(super) const XCB_EVENT_MASK_FOCUS_CHANGE: u32 = 2097152;
+pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
+pub(super) const XCB_EVENT_MASK_KEY_PRESS: u32 = 1;
+pub(super) const XCB_EVENT_MASK_KEY_RELEASE: u32 = 2;
+pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
+pub(super) const XCB_EVENT_MASK_BUTTON_RELEASE: u32 = 8;
+pub(super) const XCB_EVENT_MASK_FOCUS_CHANGE: u32 = 2097152;
 
-// pub(super) const XCB_NONE: raw::c_int = 0;
-// pub(super) const XCB_ALLOC: raw::c_int = 11;
-// pub(super) const XCB_CONN_CLOSED_EXT_NOTSUPPORTED: raw::c_int = 2;
-// pub(super) const XCB_CONN_CLOSED_MEM_INSUFFICIENT: raw::c_int = 3;
+//pub(super) const XCB_NONE: c_int = 0;
+pub(super) const XCB_ALLOC: c_int = 11;
+//pub(super) const XCB_CONN_CLOSED_EXT_NOTSUPPORTED: c_int = 2;
+//pub(super) const XCB_CONN_CLOSED_MEM_INSUFFICIENT: c_int = 3;
+
+#[repr(C)]
+pub(super) struct xcb_generic_error_t {
+    pub(super) response_type: u8,
+    pub(super) error_code: u8,
+    pub(super) sequence: u16,
+    pub(super) resource_id: u32,
+    pub(super) minor_code: u16,
+    pub(super) major_code: u8,
+    pub(super) _pad0: u8,
+    pub(super) _pad: [u32; 5],
+    pub(super) full_sequence: u32,
+}
+
+#[repr(C)]
+pub(super) struct xcb_screen_iterator_t {
+    pub(super) data: *mut xcb_screen_t,
+    pub(super) rem: c_int,
+    pub(super) index: c_int,
+}
+
+#[repr(C)]
+pub(super) struct xcb_screen_t {
+    pub(super) root: xcb_window_t,
+    pub(super) default_colourmap: xcb_colormap_t,
+    pub(super) white_pixel: u32,
+    pub(super) black_pixel: u32,
+    pub(super) current_input_masks: u32,
+    pub(super) width_in_pixels: u16,
+    pub(super) height_in_pixels: u16,
+    pub(super) width_in_millimeters: u16,
+    pub(super) height_in_millimeters: u16,
+    pub(super) min_installed_maps: u16,
+    pub(super) max_installed_maps: u16,
+    pub(super) root_visual: xcb_visualid_t,
+    pub(super) backing_stores: u8,
+    pub(super) save_unders: u8,
+    pub(super) root_depth: u8,
+    pub(super) allowed_depths_len: u8,
+}
+
+#[repr(C)]
+pub(super) struct xcb_intern_atom_reply_t {
+    pub(super) response_type: u8,
+    pub(super) pad0: u8,
+    pub(super) sequence: u16,
+    pub(super) length: u32,
+    pub(super) atom: xcb_atom_t,
+}
+
+#[repr(C)]
+pub(super) struct xcb_generic_event_t {
+    pub(super) response_type: u8,
+    pub(super) _pad0: u8,
+    pub(super) sequence: u16,
+    pub(super) _pad: [u32; 7],
+    pub(super) full_sequence: u32,
+}
+
+#[repr(C)]
+pub(super) struct xcb_client_message_event_t {
+    pub(super) response_type: u8,
+    pub(super) format: u8,
+    pub(super) sequence: u16,
+    pub(super) window: xcb_window_t,
+    pub(super) r#type: xcb_atom_t,
+    pub(super) client_data: ClientData,
+}
+
+#[repr(C)]
+pub(crate) union ClientData {
+    pub(crate) data8: [u8; 20],
+    pub(crate) data16: [u16; 10],
+    pub(crate) data32: [u32; 5],
+}
+
+#[repr(C)]
+pub(super) struct xcb_focus_in_event_t {
+    pub(super) response_type: u8,
+    pub(super) send_event: u8,
+    pub(super) sequence: u16,
+    pub(super) event: xcb_window_t,
+    pub(super) mode: u8,
+    pub(super) _pad0: [u8; 3],
+}
+
 
 // #[repr(C)]
-// struct XcbGenericError {
+// struct XcbButtonEvent {
 //     response_type: u8,
-//     error_code: u8,
+//     detail: u8,
 //     sequence: u16,
-//     resource_id: u32,
-//     minor_code: u16,
-//     major_code: u8,
-//     _pad0: u8,
-//     _pad: [u32; 5],
-//     full_sequence: u32,
+//     time: u32,
+//     root: super::XcbWindow,
+//     event: super::XcbWindow,
+//     child: super::XcbWindow,
+//     root_x: i16,
+//     root_y: i16,
+//     event_x: i16,
+//     event_y: i16,
+//     state: u16,
+//     same_screen: u8,
+//     _pad: u8,
 // }
 
-// #[repr(C)]
-// #[derive(Clone, Copy)]
-// pub(super) struct Cookie {
-//     seq: raw::c_uint,
-// }
 
 // /// Helps you create C-compatible string literals, like `c_string!("Hello!")` -> `b"Hello!\0"`.
 // macro_rules! c_string {
@@ -152,17 +295,17 @@ pub(super) enum EventQueueOwner {
 //     pub(super) atom_net_wm_pid: XcbAtom,
 //     pub(super) atom_utf8_string: XcbAtom,
 //     request_check: unsafe extern "C" fn(*mut ConnectionPtr, Cookie) -> *mut XcbGenericError,
-//     connection_has_error: unsafe extern "C" fn(*mut ConnectionPtr) -> raw::c_int,
+//     connection_has_error: unsafe extern "C" fn(*mut ConnectionPtr) -> c_int,
 //     disconnect: unsafe extern "C" fn(*mut ConnectionPtr),
-//     flush: unsafe extern "C" fn(*mut ConnectionPtr) -> raw::c_int,
+//     flush: unsafe extern "C" fn(*mut ConnectionPtr) -> c_int,
 //     generate_id: unsafe extern "C" fn(*mut ConnectionPtr) -> u32,
 //     create_window: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbWindow, i16, i16, u16, u16, u16, u16, XcbVisualId, u32, *const ffi::c_void) -> Cookie,
 //     map_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie,
 //     destroy_window: unsafe extern "C" fn(*mut ConnectionPtr, XcbWindow) -> Cookie,
-//     discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, raw::c_uint),
+//     discard_reply: unsafe extern "C" fn(*mut ConnectionPtr, c_uint),
 //     poll_for_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut event::XcbGenericEvent,
 //     poll_for_queued_event: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut event::XcbGenericEvent,
-//     _intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
+//     _intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const c_char) -> Cookie,
 //     _intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply,
 //     change_property: unsafe extern "C" fn(*mut ConnectionPtr, u8, XcbWindow, XcbAtom, XcbAtom, u8, u32, *const ffi::c_void) -> Cookie,
 //     setup_error: SetupError,
@@ -352,35 +495,6 @@ pub(super) enum EventQueueOwner {
 // unsafe impl Send for LibXcb {}
 // unsafe impl Sync for LibXcb {}
 
-// #[repr(C)]
-// #[derive(Debug)]
-// struct ScreenIterator {
-//     data: *mut Screen,
-//     rem: raw::c_int,
-//     index: raw::c_int,
-// }
-
-// #[repr(C)]
-// #[derive(Debug)]
-// struct Screen {
-//     root: XcbWindow,
-//     default_colourmap: XcbColourMap,
-//     white_pixel: u32,
-//     black_pixel: u32,
-//     current_input_masks: u32,
-//     width_in_pixels: u16,
-//     height_in_pixels: u16,
-//     width_in_millimeters: u16,
-//     height_in_millimeters: u16,
-//     min_installed_maps: u16,
-//     max_installed_maps: u16,
-//     root_visual: XcbVisualId,
-//     backing_stores: u8,
-//     save_unders: u8,
-//     root_depth: u8,
-//     allowed_depths_len: u8,
-// }
-
 // unsafe fn setup() -> Result<Xcb, SetupError> {
 //     macro_rules! load_fn {
 //         ($name:literal) => {{
@@ -394,11 +508,11 @@ pub(super) enum EventQueueOwner {
 //     // Check validity of our connection to libxcb.so and existence of functions we actually need here
 //     if !LIBXCB.is_valid() { return Err(SetupError::DlError(dl_error().unwrap_or(no_dlerror))) }
 //     enum XcbSetup {}
-//     let xcb_connect: unsafe extern "C" fn(*const raw::c_char, *mut raw::c_int) -> *mut ConnectionPtr = load_fn!("xcb_connect")?;
-//     let xcb_connection_has_error: unsafe extern "C" fn(*mut ConnectionPtr) -> raw::c_int = load_fn!("xcb_connection_has_error")?;
+//     let xcb_connect: unsafe extern "C" fn(*const c_char, *mut c_int) -> *mut ConnectionPtr = load_fn!("xcb_connect")?;
+//     let xcb_connection_has_error: unsafe extern "C" fn(*mut ConnectionPtr) -> c_int = load_fn!("xcb_connection_has_error")?;
 //     let xcb_get_setup: unsafe extern "C" fn(*mut ConnectionPtr) -> *mut XcbSetup = load_fn!("xcb_get_setup")?;
 //     let xcb_setup_roots_iterator: unsafe extern "C" fn(*const XcbSetup) -> ScreenIterator = load_fn!("xcb_setup_roots_iterator")?;
-//     let xcb_setup_roots_length: unsafe extern "C" fn(*const XcbSetup) -> raw::c_int = load_fn!("xcb_setup_roots_length")?;
+//     let xcb_setup_roots_length: unsafe extern "C" fn(*const XcbSetup) -> c_int = load_fn!("xcb_setup_roots_length")?;
 
 //     // Create an XCB connection
 //     let connection = xcb_connect(ptr::null(), ptr::null_mut());
@@ -468,7 +582,7 @@ pub(super) enum EventQueueOwner {
 // /// Note: this will always set `only_if_exists` to false; I can't imagine we'll ever have a use-case for setting it to true.
 // fn intern_atom_internal(
 //     connection: *mut ConnectionPtr,
-//     intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const raw::c_char) -> Cookie,
+//     intern_atom: unsafe extern "C" fn(*mut ConnectionPtr, u8, u16, *const c_char) -> Cookie,
 //     intern_atom_reply: unsafe extern "C" fn(*mut ConnectionPtr, Cookie, *mut *mut XcbGenericError) -> *mut event::XcbAtomReply,
 //     name: &str,
 // ) -> Result<XcbAtom, Error> {
