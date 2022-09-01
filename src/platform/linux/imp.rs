@@ -55,6 +55,8 @@ impl Drop for Connection {
     }
 }
 
+unsafe impl Send for Connection {}
+
 #[derive(Clone)]
 struct Atoms {
     wm_protocols: xcb_atom_t,
