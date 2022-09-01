@@ -16,6 +16,15 @@ pub(crate) struct Connection {
     atoms: Atoms,
 }
 
+#[derive(Clone, Copy)]
+struct Atoms {
+    wm_protocols: xcb_atom_t,
+    wm_delete_window: xcb_atom_t,
+    _net_wm_name: xcb_atom_t,
+    utf8_string: xcb_atom_t,
+    _net_wm_pid: xcb_atom_t,
+}
+
 impl Connection {
     pub(crate) fn new() -> Result<Self, Error> {
         unsafe {
@@ -56,15 +65,6 @@ impl Drop for Connection {
 }
 
 unsafe impl Send for Connection {}
-
-#[derive(Clone)]
-struct Atoms {
-    wm_protocols: xcb_atom_t,
-    wm_delete_window: xcb_atom_t,
-    _net_wm_name: xcb_atom_t,
-    utf8_string: xcb_atom_t,
-    _net_wm_pid: xcb_atom_t,
-}
 
 impl Atoms {
     unsafe fn new(connection: *mut xcb_connection_t) -> Self {
@@ -260,10 +260,7 @@ impl Window {
             // First: lock the global event queue, which is used as backup storage for events
             // which have been pulled but are not immediately relevant
             let mut connection_ = mutex_lock(&self.connection.0);
-            let connection = &mut connection_;
-            let atoms = connection.atoms.clone();
-            let c = connection.connection;
-            let map = &mut connection.event_buffer;
+            let Connection { atoms, connection: c, event_buffer: map, .. } = &mut *connection_;
 
             // Clear our event buffer of the previous set of events
             self.event_buffer.clear();
@@ -277,7 +274,7 @@ impl Window {
             }
 
             // Call `poll_event` once, which populates XCB's internal linked list from the connection
-            let event = xcb_poll_for_event(c);
+            let event = xcb_poll_for_event(*c);
             if !event.is_null() {
                 if let Some((event, window)) = process_event(&atoms, event) {
                     if window == self.handle {
@@ -287,7 +284,7 @@ impl Window {
                     }
                 }
             }
-            let mut event = xcb_poll_for_queued_event(c);
+            let mut event = xcb_poll_for_queued_event(*c);
             while !event.is_null() {
                 if let Some((event, window)) = process_event(&atoms, event) {
                     if window == self.handle {
@@ -296,7 +293,7 @@ impl Window {
                         queue.push(event);
                     }
                 }
-                event = xcb_poll_for_queued_event(c);
+                event = xcb_poll_for_queued_event(*c);
             }
         }
     }
