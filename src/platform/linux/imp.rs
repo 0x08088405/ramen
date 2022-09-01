@@ -113,8 +113,7 @@ impl Window {
         unsafe {
             let connection_arc = builder.connection.clone();
             let mut connection_mtx = mutex_lock(&connection_arc.0);
-            let connection = &mut connection_mtx;
-            let c = connection.connection;
+            let c = connection_mtx.connection;
 
             // Generate an ID for our new window
             let xid = xcb_generate_id(c);
@@ -124,7 +123,24 @@ impl Window {
                 return Err(Error::SystemResources);
             }
 
-            // TODO: *clear event queue *
+            // Clear the event queue, in case any events remain in it intended for a previous object with this xid we just claimed
+            let event = xcb_poll_for_event(c);
+            if !event.is_null() {
+                if let Some((event, window)) = process_event(&connection_mtx.atoms, event) {
+                    if let Some(queue) = connection_mtx.event_buffer.get_mut(&window) {
+                        queue.push(event);
+                    }
+                }
+            }
+            let mut event = xcb_poll_for_queued_event(c);
+            while !event.is_null() {
+                if let Some((event, window)) = process_event(&connection_mtx.atoms, event) {
+                    if let Some(queue) = connection_mtx.event_buffer.get_mut(&window) {
+                        queue.push(event);
+                    }
+                }
+                event = xcb_poll_for_queued_event(c);
+            }
 
             // Create the new X window
             const EVENT_MASK: u32 = XCB_EVENT_MASK_KEY_PRESS
@@ -139,7 +155,7 @@ impl Window {
                 c,
                 XCB_COPY_FROM_PARENT,
                 xid,
-                (&*connection.screen).root, // idk
+                (&*connection_mtx.screen).root, // idk
                 0,
                 0,
                 800,
@@ -174,11 +190,11 @@ impl Window {
                 c,
                 XCB_PROP_MODE_REPLACE,
                 xid,
-                connection.atoms.wm_protocols,
+                connection_mtx.atoms.wm_protocols,
                 XCB_ATOM_ATOM,
                 32,
                 1,
-                (&connection.atoms.wm_delete_window) as *const u32 as _,
+                (&connection_mtx.atoms.wm_delete_window) as *const u32 as _,
             );
 
             // Try to write the requested window title to the WM_NAME and _NET_WM_NAME properties
@@ -189,8 +205,8 @@ impl Window {
                 c,
                 XCB_PROP_MODE_REPLACE,
                 xid,
-                connection.atoms._net_wm_name,
-                connection.atoms.utf8_string,
+                connection_mtx.atoms._net_wm_name,
+                connection_mtx.atoms.utf8_string,
                 8,
                 title.bytes().len() as _,
                 title.as_ptr().cast(),
@@ -212,7 +228,7 @@ impl Window {
                 c,
                 XCB_PROP_MODE_REPLACE,
                 xid,
-                connection.atoms._net_wm_pid,
+                connection_mtx.atoms._net_wm_pid,
                 XCB_ATOM_CARDINAL,
                 32,
                 1,
@@ -235,13 +251,13 @@ impl Window {
             // Now we'll insert an entry into the EVENT_QUEUE hashmap for this window we've created.
             // We do this even if the queue probably won't be used, as it's the soundest way to ensure
             // memory gets cleaned up.
-            let _ = connection.event_buffer.insert(xid, Vec::with_capacity(QUEUE_SIZE));
+            let _ = connection_mtx.event_buffer.insert(xid, Vec::with_capacity(QUEUE_SIZE));
 
             if xcb_connection_has_error(c) != 0 {
                 panic!("oh no");
             }
 
-            std::mem::drop(connection);
+            //std::mem::drop(connection);
             std::mem::drop(connection_mtx);
             Ok(Window {
                 connection: connection_arc,
