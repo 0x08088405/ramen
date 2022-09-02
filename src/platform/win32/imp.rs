@@ -47,7 +47,7 @@ fn str_to_wstr(src: &str, buffer: &mut Vec<WCHAR>) -> Option<*const WCHAR> {
     unsafe {
         // calculate buffer size
         // +1 for null terminator (that we add ourselves)
-        let req_buffer_size = MultiByteToWideChar(CP_UTF8, 0, src.as_ptr().cast(), src_len, ptr::null_mut(), 0) + 1;
+        let req_buffer_size = MultiByteToWideChar(CP_UTF8 as _, 0, src.as_ptr().cast(), src_len, ptr::null_mut(), 0) + 1;
 
         // ensure buffer capacity
         buffer.clear();
@@ -55,7 +55,7 @@ fn str_to_wstr(src: &str, buffer: &mut Vec<WCHAR>) -> Option<*const WCHAR> {
 
         // write to destination buffer
         let chars_written =
-            MultiByteToWideChar(CP_UTF8, 0, src.as_ptr().cast(), src_len, buffer.as_mut_ptr(), req_buffer_size)
+            MultiByteToWideChar(CP_UTF8 as _, 0, src.as_ptr().cast(), src_len, buffer.as_mut_ptr(), req_buffer_size)
                 as usize;
 
         // append null terminator

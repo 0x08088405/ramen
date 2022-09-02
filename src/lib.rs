@@ -8,8 +8,8 @@ pub(crate) mod util;
 pub mod connection;
 pub mod error;
 pub mod event;
-#[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "input")))]
-#[cfg_attr(not(feature = "nightly-docs"), cfg(feature = "input"))]
+#[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
+#[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
 pub mod input;
 pub mod platform;
 pub mod window;
