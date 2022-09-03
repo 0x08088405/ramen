@@ -15,25 +15,34 @@ macro_rules! load {
                 $($fn_name: unsafe extern "system" fn($($arg_ty),+) $(-> $ret)?),+,
             }
             impl $type_name {
-                $vis unsafe fn load() -> bool {
+                $vis unsafe fn load() -> Result<(), crate::error::Error> {
                     static INIT: ::std::sync::Once = ::std::sync::Once::new();
                     static mut LOADED: bool = false;
                     INIT.call_once(|| {
                         let mut fp = $name.as_mut_ptr() as *mut *mut __anyopaque;
                         let mut handle = ::std::ptr::null_mut();
                         for name in [$(cstr!($so_name)),+] {
-                            handle = dlopen(name);
+                            handle = libc::dlopen(name, libc::RTLD_LOCAL | libc::RTLD_LAZY);
                             if !handle.is_null() { break; }
                         }
-                        let _ = dlerror();
+                        let _ = libc::dlerror();
                         if handle.is_null() { return; }
                         for sym in [$(cstr!(stringify!($fn_name))),+] {
-                            *fp = dlsym(handle, sym).cast();
+                            *fp = libc::dlsym(handle, sym).cast();
                             fp = fp.offset(1);
                         }
-                        LOADED = dlerror().is_null();
+                        LOADED = true;
                     });
-                    LOADED
+                    let err_start = libc::dlerror();
+                    if err_start.is_null() {
+                        if LOADED {
+                            Ok(())
+                        } else {
+                            Err(crate::error::Error::Unsupported)
+                        }
+                    } else {
+                        Err(crate::error::Error::Text(String::from_utf8_lossy(std::slice::from_raw_parts(err_start.cast(), libc::strlen(err_start)))))
+                    }
                 }
             }
             $(#[inline(always)] $vis unsafe fn $fn_name($($arg_name:$arg_ty),+) $(-> $ret)? {
