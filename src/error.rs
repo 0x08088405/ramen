@@ -8,7 +8,7 @@ pub enum Error {
     /// The program has run out of stack or a heap allocation has failed
     OutOfMemory,
 
-    /// There system did not have the resources to fulfil the request
+    /// The system did not have the resources to fulfil the request
     SystemResources,
 
     /// A human-readable error string was returned by the operating system
