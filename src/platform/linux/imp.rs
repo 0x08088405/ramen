@@ -28,9 +28,9 @@ struct Atoms {
 impl Connection {
     pub(crate) fn new() -> Result<Self, Error> {
         unsafe {
-            if let Err(e) = libX11::load() { return Err(e) }
-            if let Err(e) = libX11_xcb::load() { return Err(e) }
-            if let Err(e) = libxcb::load() { return Err(e) }
+            libX11::load()?;
+            libX11_xcb::load()?;
+            libxcb::load()?;
             let display = XOpenDisplay(std::ptr::null_mut());
             if display.is_null() {
                 panic!("oh no"); // TODO
