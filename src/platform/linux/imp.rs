@@ -33,7 +33,9 @@ impl Connection {
             libxcb::load()?;
             let display = XOpenDisplay(std::ptr::null_mut());
             if display.is_null() {
-                panic!("oh no"); // TODO
+                // TODO: Unclear why this could fail when passing nullptr to it. Maybe the system has no screens?
+                // Maybe the underlying connection has failed, but how would we check?
+                return Err(Error::Unknown)
             }
             let screen_num = XDefaultScreen(display);
             let connection = XGetXCBConnection(display);
@@ -43,7 +45,7 @@ impl Connection {
                 xcb_screen_next(&mut iter);
             }
             let screen = iter.data;
-            let atoms = Atoms::new(connection);
+            let atoms = Atoms::new(connection)?;
             Ok(Connection {
                 display,
                 connection,
@@ -51,6 +53,17 @@ impl Connection {
                 atoms,
                 event_buffer: HashMap::new(),
             })
+        }
+    }
+
+    // Helper wrapper for `xcb_connection_has_error` for use with `?`. Assumes pointer is valid.
+    unsafe fn check(c: *mut xcb_connection_t) -> Result<(), Error> {
+        let err = xcb_connection_has_error(c);
+        match err {
+            XCB_NONE => Ok(()),
+            XCB_CONN_CLOSED_EXT_NOTSUPPORTED => Err(Error::Unsupported),
+            XCB_CONN_CLOSED_MEM_INSUFFICIENT => Err(Error::SystemResources),
+            _ => Err(Error::Invalid),
         }
     }
 }
@@ -67,7 +80,7 @@ impl Drop for Connection {
 unsafe impl Send for Connection {}
 
 impl Atoms {
-    unsafe fn new(connection: *mut xcb_connection_t) -> Self {
+    unsafe fn new(connection: *mut xcb_connection_t) -> Result<Self, Error> {
         const N_ATOMS: usize = 5;
         let mut atom_replies = [0 as c_uint; N_ATOMS];
         let mut atoms = [0 as xcb_atom_t; N_ATOMS];
@@ -81,24 +94,26 @@ impl Atoms {
         atom!(2, "_NET_WM_NAME");
         atom!(3, "UTF8_STRING");
         atom!(4, "_NET_WM_PID");
-        for (i, seq) in atom_replies.into_iter().enumerate() {
+        for (r, seq) in atoms.iter_mut().zip(atom_replies.into_iter()) {
             let mut err: *mut xcb_generic_error_t = std::ptr::null_mut();
             let reply = xcb_intern_atom_reply(connection, seq, &mut err);
             if !reply.is_null() {
-                atoms[i] = (&*reply).atom;
+                *r = (&*reply).atom;
                 free(reply.cast());
             } else {
                 free(err.cast());
-                panic!("oh no we got an error");
+                // xcb_intern_atom can only fail due to alloc error or value error,
+                // and this can't be a value error because we always pass a valid value (0) for only_if_exists
+                return Err(Error::SystemResources);
             }
         }
-        Self {
+        Ok(Self {
             wm_protocols: atoms[0],
             wm_delete_window: atoms[1],
             _net_wm_name: atoms[2],
             utf8_string: atoms[3],
             _net_wm_pid: atoms[4],
-        }
+        })
     }
 }
 
@@ -234,17 +249,13 @@ impl Window {
                 (&pid) as *const i32 as _,
             );
 
-            // TODO: This "returns <= 0 on error", how is that value significant? Is it -EINVAL type thing?
-            // TODO: Don't think this is needed, because of the checked map thing below. Sometime, look into it.
-            let _ = xcb_flush(c);
-
-            // time to map!!!
+            // Try to map window to screen
             let map_error = xcb_request_check(c, xcb_map_window_checked(c, xid));
             if !map_error.is_null() {
                 // Can only fail due to "Window" error, so I think this is unreachable in practice
-                // TODO: map connection errors
                 free(map_error.cast());
-                panic!("oh no");
+                Connection::check(c)?;
+                return Err(Error::Unknown)
             }
 
             // Now we'll insert an entry into the EVENT_QUEUE hashmap for this window we've created.
@@ -252,11 +263,12 @@ impl Window {
             // memory gets cleaned up.
             let _ = connection_mtx.event_buffer.insert(xid, Vec::with_capacity(QUEUE_SIZE));
 
-            if xcb_connection_has_error(c) != 0 {
-                panic!("oh no");
+            // TODO: This "returns <= 0 on error", how is that value significant? Is it -EINVAL type thing?
+            if xcb_flush(c) <= 0 {
+                Connection::check(c)?;
+                return Err(Error::Unknown)
             }
 
-            //std::mem::drop(connection);
             std::mem::drop(connection_mtx);
             Ok(Window {
                 connection: builder.connection,
