@@ -14,6 +14,9 @@ pub enum Error {
     /// A human-readable error string was returned by the operating system
     Text(Cow<'static, str>),
 
+    /// The reason for failure can't be determined because none was reported by the backend
+    Unknown,
+
     /// The platform does not support the features necessary for this request
     Unsupported,
 }
