@@ -98,7 +98,7 @@ impl Atoms {
             let mut err: *mut xcb_generic_error_t = std::ptr::null_mut();
             let reply = xcb_intern_atom_reply(connection, seq, &mut err);
             if !reply.is_null() {
-                *r = (&*reply).atom;
+                *r = (*reply).atom;
                 free(reply.cast());
             } else {
                 free(err.cast());
@@ -169,7 +169,7 @@ impl Window {
                 c,
                 XCB_COPY_FROM_PARENT,
                 xid,
-                (&*connection_mtx.screen).root, // idk
+                (*connection_mtx.screen).root, // idk
                 0,
                 0,
                 800,
@@ -190,7 +190,7 @@ impl Window {
                 // Pixmap - we don't currently pass a pixmap
                 // Value - bad value for a user param, so maps to Error::Invalid
                 // Window - we just created that XID so that's not possible
-                let errno = (&*create_error).error_code;
+                let errno = (*create_error).error_code;
                 free(create_error.cast());
                 if errno as c_int == XCB_ALLOC {
                     return Err(Error::SystemResources);
@@ -303,7 +303,7 @@ impl Window {
             // Call `poll_event` once, which populates XCB's internal linked list from the connection
             let event = xcb_poll_for_event(*c);
             if !event.is_null() {
-                if let Some((event, window)) = process_event(&atoms, event) {
+                if let Some((event, window)) = process_event(atoms, event) {
                     if window == self.handle {
                         self.event_buffer.push(event);
                     } else if let Some(queue) = map.get_mut(&window) {
@@ -313,7 +313,7 @@ impl Window {
             }
             let mut event = xcb_poll_for_queued_event(*c);
             while !event.is_null() {
-                if let Some((event, window)) = process_event(&atoms, event) {
+                if let Some((event, window)) = process_event(atoms, event) {
                     if window == self.handle {
                         self.event_buffer.push(event);
                     } else if let Some(queue) = map.get_mut(&window) {
@@ -351,7 +351,7 @@ unsafe fn process_event(atoms: &Atoms, ev: *mut xcb_generic_event_t) -> Option<(
         },
         XCB_FOCUS_IN | XCB_FOCUS_OUT => {
             let state = (*ev).response_type == XCB_FOCUS_IN;
-            Some((Event::Focus(state), (&*(ev as *mut xcb_focus_in_event_t)).event))
+            Some((Event::Focus(state), (*(ev as *mut xcb_focus_in_event_t)).event))
         },
         _ => None,
     };
