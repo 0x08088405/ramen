@@ -109,10 +109,9 @@ pub(crate) struct Window {
 }
 
 impl Window {
-    pub(crate) fn new(builder: &window::Builder) -> Result<Self, Error> {
+    pub(crate) fn new(builder: window::Builder) -> Result<Self, Error> {
         unsafe {
-            let connection_arc = builder.connection.clone();
-            let mut connection_mtx = mutex_lock(&connection_arc.0);
+            let mut connection_mtx = mutex_lock(&builder.connection.0);
             let c = connection_mtx.connection;
 
             // Generate an ID for our new window
@@ -260,7 +259,7 @@ impl Window {
             //std::mem::drop(connection);
             std::mem::drop(connection_mtx);
             Ok(Window {
-                connection: connection_arc,
+                connection: builder.connection,
                 handle: xid,
                 event_buffer: Vec::with_capacity(QUEUE_SIZE),
             })

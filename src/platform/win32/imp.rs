@@ -144,7 +144,7 @@ struct WindowState {
     qpc_previous: u64,
 }
 
-unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
+unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
     // A window class describes the default state of a window, more or less.
     // It needs to be registered to the system-global table if it has not been.
     let mut class = mem::MaybeUninit::<WNDCLASSEXW>::uninit();
@@ -299,7 +299,7 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
 }
 
 impl Window {
-    pub(crate) fn new(builder: &window::Builder) -> Result<Self, Error> {
+    pub(crate) fn new(builder: window::Builder) -> Result<Self, Error> {
         unsafe { make_window(builder) }
     }
 

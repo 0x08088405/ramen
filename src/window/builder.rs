@@ -6,6 +6,10 @@ use std::borrow::Cow;
 /// Builder for instantiating a [`Window`](super::Window).
 ///
 /// To create a builder, use [`Connection::builder`](Connection::builder).
+/// 
+/// To finish building and open a window, use [`build`](Self::build). This will consume the Builder.
+/// Builders can be cloned if you'd like to re-use one to build multiple windows.
+#[derive(Clone)]
 pub struct Builder {
     pub(crate) connection: Connection,
     pub(crate) class_name: Cow<'static, str>,
@@ -27,16 +31,16 @@ impl Builder {
         }
     }
 
-    pub fn build(&self) -> Result<super::Window, Error> {
+    pub fn build(self) -> Result<super::Window, Error> {
         imp::Window::new(self).map(super::Window)
     }
 
-    pub fn borderless(&mut self, borderless: bool) -> &mut Self {
+    pub fn borderless(mut self, borderless: bool) -> Self {
         self.style.borderless = borderless;
         self
     }
 
-    pub fn controls(&mut self, controls: Option<Controls>) -> &mut Self {
+    pub fn controls(mut self, controls: Option<Controls>) -> Self {
         self.style.controls = controls;
         self
     }
@@ -44,7 +48,7 @@ impl Builder {
     /// Sets the platform-specific window class name.
     ///
     /// Defaults to `"ramen_window"`.
-    pub fn class_name<T>(&mut self, class_name: T) -> &mut Self
+    pub fn class_name<T>(mut self, class_name: T) -> Self
     where
         T: Into<Cow<'static, str>>,
     {
@@ -57,7 +61,7 @@ impl Builder {
     /// Note that this being `false` does not prevent it being done via API calls.
     ///
     /// Defaults to `true`.
-    pub fn resizable(&mut self, resizable: bool) -> &mut Self {
+    pub fn resizable(mut self, resizable: bool) -> Self {
         self.style.resizable = resizable;
         self
     }
@@ -65,7 +69,7 @@ impl Builder {
     /// Sets the initial window title.
     ///
     /// Defaults to `"a nice window"`.
-    pub fn title<T>(&mut self, title: T) -> &mut Self
+    pub fn title<T>(mut self, title: T) -> Self
     where
         T: Into<Cow<'static, str>>,
     {
@@ -76,7 +80,7 @@ impl Builder {
     /// Sets whether the window controls and title bar initially have a right-to-left layout.
     ///
     /// Defaults to `false`.
-    pub fn right_to_left(&mut self, right_to_left: bool) -> &mut Self {
+    pub fn right_to_left(mut self, right_to_left: bool) -> Self {
         self.style.right_to_left = right_to_left;
         self
     }
@@ -84,7 +88,7 @@ impl Builder {
     /// Sets whether the window is initially visible to the user.
     ///
     /// Defaults to `true`.
-    pub fn visible(&mut self, visible: bool) -> &mut Self {
+    pub fn visible(mut self, visible: bool) -> Self {
         self.style.visible = visible;
         self
     }
