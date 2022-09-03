@@ -1,15 +1,30 @@
 use ramen::event::Event;
 
 pub fn main() {
-    let t = [std::thread::spawn(f), std::thread::spawn(f)];
+    let t = [std::thread::spawn(f)];
     for x in t {
-        x.join().expect("????");
+        if x.join().is_err() {
+            eprintln!("Exiting main thread because join() failed");
+            return;
+        }
     }
 }
 
 pub fn f() {
-    let connection = ramen::connection::Connection::new().unwrap();
-    let mut window = connection.into_builder().title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏").build().expect("Couldn't build window");
+    let connection = match ramen::connection::Connection::new() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error setting up connection: {:?}", e);
+            return;
+        },
+    };
+    let mut window = match connection.into_builder().title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏").build() {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("Error building window: {:?}", e);
+            return;
+        },
+    };
     'program: loop {
         window.poll_events();
         for event in window.events() {
