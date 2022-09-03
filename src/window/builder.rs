@@ -5,7 +5,7 @@ use std::borrow::Cow;
 
 /// Builder for instantiating a [`Window`](super::Window).
 ///
-/// To create a builder, use [`Window::builder`](super::Window::builder) or the default implementation.
+/// To create a builder, use [`Connection::builder`](Connection::builder).
 pub struct Builder {
     pub(crate) connection: Connection,
     pub(crate) class_name: Cow<'static, str>,

@@ -6,24 +6,14 @@ pub use self::{
     decoration::{Controls, Style},
 };
 
-use crate::{connection::Connection, event::Event, platform::imp};
+use crate::{event::Event, platform::imp};
 
 /// Represents an open window. Dropping it closes the window.
 ///
-/// To instantiate windows, use a [`builder`](Self::builder).
+/// To instantiate windows, use a [`builder`](crate::connection::Connection::builder).
 pub struct Window(imp::Window);
 
 impl Window {
-    /// Creates a [`Builder`] for interactively instantiating a [`Window`].
-    pub const fn builder(connection: Connection) -> Builder {
-        Builder::new(connection, None)
-    }
-
-    /// Similar to [`builder`](Self::builder), but derives the defaults from a given [`Style`].
-    pub const fn with_style(connection: Connection, style: Style) -> Builder {
-        Builder::new(connection, Some(style))
-    }
-
     /// Returns an iterator of events currently in the buffer. The buffer must first be populated with `poll_events()`.
     /// After calling `poll_events()` once, the buffer contents will remain the same, every time this function is
     /// called, until the next time `poll_events()` is called.
