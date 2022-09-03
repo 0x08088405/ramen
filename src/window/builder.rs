@@ -31,15 +31,22 @@ impl Builder {
         }
     }
 
+    /// Attempt to build a Window, consuming this Builder object.
     pub fn build(self) -> Result<super::Window, Error> {
         imp::Window::new(self).map(super::Window)
     }
 
+    /// Sets whether the window should be borderless.
+    /// 
+    /// Defaults to `false`.
     pub fn borderless(mut self, borderless: bool) -> Self {
         self.style.borderless = borderless;
         self
     }
 
+    /// Specifies the control buttons this window should have.
+    /// 
+    /// Defaults to `None`, meaning the controls will be decided by the operating system.
     pub fn controls(mut self, controls: Option<Controls>) -> Self {
         self.style.controls = controls;
         self
