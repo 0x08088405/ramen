@@ -3,6 +3,11 @@
 
 pub(super) use libc::{c_char, c_int, c_uint, c_void, free, getpid};
 
+use libc::{dlsym, dlerror};
+unsafe fn dlopen(name: *const c_char) -> *mut c_void {
+    libc::dlopen(name, libc::RTLD_LOCAL | libc::RTLD_LAZY)
+}
+
 load! {
     pub(super) xlib(libX11) "libX11.so.6", "libX11.so" {
         fn XOpenDisplay(display_name: *const c_char) -> *mut Display;

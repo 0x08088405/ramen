@@ -22,18 +22,18 @@ macro_rules! load {
                         let mut fp = $name.as_mut_ptr() as *mut *mut __anyopaque;
                         let mut handle = ::std::ptr::null_mut();
                         for name in [$(cstr!($so_name)),+] {
-                            handle = libc::dlopen(name, libc::RTLD_LOCAL | libc::RTLD_LAZY);
+                            handle = dlopen(name);
                             if !handle.is_null() { break; }
                         }
-                        let _ = libc::dlerror();
+                        let _ = dlerror();
                         if handle.is_null() { return; }
                         for sym in [$(cstr!(stringify!($fn_name))),+] {
-                            *fp = libc::dlsym(handle, sym).cast();
+                            *fp = dlsym(handle, sym).cast();
                             fp = fp.offset(1);
                         }
                         LOADED = true;
                     });
-                    let err_start = libc::dlerror();
+                    let err_start = dlerror();
                     if err_start.is_null() {
                         if LOADED {
                             Ok(())
@@ -41,7 +41,8 @@ macro_rules! load {
                             Err(crate::error::Error::Unsupported)
                         }
                     } else {
-                        Err(crate::error::Error::Text(String::from_utf8_lossy(std::slice::from_raw_parts(err_start.cast(), libc::strlen(err_start)))))
+                        let cstr = std::ffi::CStr::from_ptr(err_start);
+                        Err(crate::error::Error::Text(String::from_utf8_lossy(cstr.to_bytes())))
                     }
                 }
             }
