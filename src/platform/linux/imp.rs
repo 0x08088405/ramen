@@ -13,6 +13,7 @@ pub(crate) struct Connection {
     connection: *mut xcb_connection_t,
     screen: *mut xcb_screen_t,
     event_buffer: HashMap<xcb_window_t, Vec<Event>>,
+    hostname: Option<Vec<c_char>>,
     atoms: Atoms,
 }
 
@@ -23,6 +24,7 @@ struct Atoms {
     _net_wm_name: xcb_atom_t,
     utf8_string: xcb_atom_t,
     _net_wm_pid: xcb_atom_t,
+    wm_client_machine: xcb_atom_t,
 }
 
 impl Connection {
@@ -31,6 +33,7 @@ impl Connection {
             libX11::load()?;
             libX11_xcb::load()?;
             libxcb::load()?;
+
             let display = XOpenDisplay(std::ptr::null_mut());
             if display.is_null() {
                 // TODO: Unclear why this could fail when passing nullptr to it. Maybe the system has no screens?
@@ -46,11 +49,39 @@ impl Connection {
             }
             let screen = iter.data;
             let atoms = Atoms::new(connection)?;
+
+            // Try to get machine's hostname
+            let mut len = 16;
+            let mut hostname: Vec<c_char> = Vec::new();
+            let hostname = loop {
+                hostname.resize_with(len, Default::default); // Make sure vec is full of null-terminators
+                let err = libc::gethostname((&mut hostname).as_mut_ptr(), len);
+                if err == 0 {
+                    // We got the hostname, now let's make sure the i8 vec is exactly the right size with no extra nulls
+                    if let Some(pos) = hostname.iter().position(|x| *x == 0) {
+                        hostname.set_len(pos + 1);
+                    } else {
+                        // There are no null-terminators, this means the vec was exactly the size of the hostname
+                        // So we need to push a null-terminator onto it ourselves
+                        hostname.push(0);
+                    }
+                    //hostname.shrink_to_fit(); // useful?
+                    break Some(hostname);
+                } else {
+                    // Either ENAMETOOLONG or EINVAL would both indicate that the hostname is longer than the buffer
+                    match len.checked_mul(2) {
+                        Some(l) if l <= (1 << 16) => len = l,
+                        _ => break None, // Give up if some sanity limit is reached or we overflowed usize..
+                    }
+                }
+            };
+
             Ok(Connection {
                 display,
                 connection,
                 screen,
                 atoms,
+                hostname,
                 event_buffer: HashMap::new(),
             })
         }
@@ -81,7 +112,7 @@ unsafe impl Send for Connection {}
 
 impl Atoms {
     unsafe fn new(connection: *mut xcb_connection_t) -> Result<Self, Error> {
-        const N_ATOMS: usize = 5;
+        const N_ATOMS: usize = 6;
         let mut atom_replies = [0 as c_uint; N_ATOMS];
         let mut atoms = [0 as xcb_atom_t; N_ATOMS];
         macro_rules! atom {
@@ -94,6 +125,7 @@ impl Atoms {
         atom!(2, "_NET_WM_NAME");
         atom!(3, "UTF8_STRING");
         atom!(4, "_NET_WM_PID");
+        atom!(5, "WM_CLIENT_MACHINE");
         for (r, seq) in atoms.iter_mut().zip(atom_replies.into_iter()) {
             let mut err: *mut xcb_generic_error_t = std::ptr::null_mut();
             let reply = xcb_intern_atom_reply(connection, seq, &mut err);
@@ -113,6 +145,7 @@ impl Atoms {
             _net_wm_name: atoms[2],
             utf8_string: atoms[3],
             _net_wm_pid: atoms[4],
+            wm_client_machine: atoms[5],
         })
     }
 }
@@ -127,7 +160,9 @@ impl Window {
     pub(crate) fn new(builder: window::Builder) -> Result<Self, Error> {
         unsafe {
             let mut connection_mtx = mutex_lock(&builder.connection.0);
-            let c = connection_mtx.connection;
+            let connection: &mut Connection = &mut *connection_mtx;
+            let c = connection.connection;
+            let hostname = connection.hostname.as_ref();
 
             // Generate an ID for our new window
             let xid = xcb_generate_id(c);
@@ -140,16 +175,16 @@ impl Window {
             // Clear the event queue, in case any events remain in it intended for a previous object with this xid we just claimed
             let event = xcb_poll_for_event(c);
             if !event.is_null() {
-                if let Some((event, window)) = process_event(&connection_mtx.atoms, event) {
-                    if let Some(queue) = connection_mtx.event_buffer.get_mut(&window) {
+                if let Some((event, window)) = process_event(&connection.atoms, event) {
+                    if let Some(queue) = connection.event_buffer.get_mut(&window) {
                         queue.push(event);
                     }
                 }
             }
             let mut event = xcb_poll_for_queued_event(c);
             while !event.is_null() {
-                if let Some((event, window)) = process_event(&connection_mtx.atoms, event) {
-                    if let Some(queue) = connection_mtx.event_buffer.get_mut(&window) {
+                if let Some((event, window)) = process_event(&connection.atoms, event) {
+                    if let Some(queue) = connection.event_buffer.get_mut(&window) {
                         queue.push(event);
                     }
                 }
@@ -169,7 +204,7 @@ impl Window {
                 c,
                 XCB_COPY_FROM_PARENT,
                 xid,
-                (*connection_mtx.screen).root, // idk
+                (*connection.screen).root, // idk
                 0,
                 0,
                 800,
@@ -204,11 +239,11 @@ impl Window {
                 c,
                 XCB_PROP_MODE_REPLACE,
                 xid,
-                connection_mtx.atoms.wm_protocols,
+                connection.atoms.wm_protocols,
                 XCB_ATOM_ATOM,
                 32,
                 1,
-                (&connection_mtx.atoms.wm_delete_window) as *const u32 as _,
+                (&connection.atoms.wm_delete_window) as *const u32 as _,
             );
 
             // Try to write the requested window title to the WM_NAME and _NET_WM_NAME properties
@@ -219,8 +254,8 @@ impl Window {
                 c,
                 XCB_PROP_MODE_REPLACE,
                 xid,
-                connection_mtx.atoms._net_wm_name,
-                connection_mtx.atoms.utf8_string,
+                connection.atoms._net_wm_name,
+                connection.atoms.utf8_string,
                 8,
                 title.bytes().len() as _,
                 title.as_ptr().cast(),
@@ -236,18 +271,33 @@ impl Window {
                 title.as_ptr().cast(),
             );
 
-            // Get PID of current process and write that to _NET_WM_PID
-            let pid = getpid();
-            let _ = xcb_change_property(
-                c,
-                XCB_PROP_MODE_REPLACE,
-                xid,
-                connection_mtx.atoms._net_wm_pid,
-                XCB_ATOM_CARDINAL,
-                32,
-                1,
-                (&pid) as *const i32 as _,
-            );
+            // If hostname is known, get PID of current process and write that to _NET_WM_PID
+            // But don't write either of these properties if hostname is not known, because:
+            // "If _NET_WM_PID is set, the ICCCM-specified property WM_CLIENT_MACHINE MUST also be set." - EWMH spec
+            if let Some(hostname) = hostname {
+                let pid = getpid();
+                let _ = xcb_change_property(
+                    c,
+                    XCB_PROP_MODE_REPLACE,
+                    xid,
+                    connection.atoms._net_wm_pid,
+                    XCB_ATOM_CARDINAL,
+                    32,
+                    1,
+                    (&pid) as *const i32 as _,
+                );
+
+                let _ = xcb_change_property(
+                    c,
+                    XCB_PROP_MODE_REPLACE,
+                    xid,
+                    connection.atoms.wm_client_machine,
+                    XCB_ATOM_STRING,
+                    8,
+                    hostname.len() as _,
+                    hostname.as_ptr().cast(),
+                );
+            }
 
             // Try to map window to screen
             let map_error = xcb_request_check(c, xcb_map_window_checked(c, xid));
@@ -261,7 +311,7 @@ impl Window {
             // Now we'll insert an entry into the EVENT_QUEUE hashmap for this window we've created.
             // We do this even if the queue probably won't be used, as it's the soundest way to ensure
             // memory gets cleaned up.
-            let _ = connection_mtx.event_buffer.insert(xid, Vec::with_capacity(QUEUE_SIZE));
+            let _ = connection.event_buffer.insert(xid, Vec::with_capacity(QUEUE_SIZE));
 
             // TODO: This "returns <= 0 on error", how is that value significant? Is it -EINVAL type thing?
             if xcb_flush(c) <= 0 {
