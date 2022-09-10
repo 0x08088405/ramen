@@ -1,3 +1,5 @@
+#![allow(unused_macros)] // macros are unused in win32 at the moment?
+
 macro_rules! cstr {
     ($($x:tt)+) => {{ concat!($($x)+, "\0").as_ptr().cast() }};
 }
