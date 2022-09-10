@@ -10,4 +10,4 @@ pub use self::{
 };
 
 // internals
-pub(crate) use imp::Window;
+pub(crate) use imp::{Connection, Window};

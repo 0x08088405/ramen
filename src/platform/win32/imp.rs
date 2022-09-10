@@ -5,6 +5,7 @@
 use super::ffi::*;
 
 use crate::{
+    connection,
     error::Error,
     event::{CloseReason, Event},
     input::Key,
@@ -13,6 +14,14 @@ use crate::{
 };
 
 use std::{cell::UnsafeCell, hint, mem, ptr, sync::{atomic::{self, AtomicBool}, Arc}, thread};
+
+pub(crate) struct Connection;
+
+impl Connection {
+    pub(crate) fn new() -> Result<Self, Error> {
+        Ok(Self)
+    }
+}
 
 /// Marker for identifying windows instantiated by ramen.
 /// This is necessary because some software likes to inject windows on your thread that you didn't create.
@@ -120,6 +129,7 @@ unsafe fn set_close_button(hwnd: HWND, enabled: bool) {
 }
 
 pub(crate) struct Window {
+    _connection: connection::Connection,
     hwnd: HWND,
     state: *mut WindowState, // 'thread, volatile
     thread: Option<thread::JoinHandle<()>>,
@@ -252,6 +262,7 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
         let (cvar, mutex) = &*send;
         let mut lock = sync::mutex_lock(mutex);
         *lock = Some(Ok(Window {
+            _connection: builder.connection,
             hwnd,
             state: window_state.get(),
             thread: None,
