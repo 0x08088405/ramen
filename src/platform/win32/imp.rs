@@ -5,6 +5,7 @@
 use super::ffi::*;
 
 use crate::{
+    connection,
     error::Error,
     event::{CloseReason, Event},
     input::Key,
@@ -14,12 +15,23 @@ use crate::{
 
 use std::{cell::UnsafeCell, hint, mem, ptr, sync::{atomic::{self, AtomicBool}, Arc}, thread};
 
+pub(crate) struct Connection;
+
+impl Connection {
+    pub(crate) fn new() -> Result<Self, Error> {
+        Ok(Self)
+    }
+}
+
 /// Marker for identifying windows instantiated by ramen.
 /// This is necessary because some software likes to inject windows on your thread that you didn't create.
 /// Identifying a window is done by storing this value in the tail allocation of the window class struct,
 /// which is guaranteed to exist for our windows with `WNDCLASSEXW->cbClsExtra` being exactly usize-sized.
 /// On why it's a `usize` of all things, see the remarks on `set_class_storage`.
 const RAMEN_WINDOW_MARKER: usize = u32::from_le_bytes(*b"viri") as usize;
+
+/// Custom window message
+const RAMEN_WM_DROP: UINT = WM_USER + 0;
 
 /// Retrieves the base module [`HINSTANCE`].
 #[inline]
@@ -47,7 +59,7 @@ fn str_to_wstr(src: &str, buffer: &mut Vec<WCHAR>) -> Option<*const WCHAR> {
     unsafe {
         // calculate buffer size
         // +1 for null terminator (that we add ourselves)
-        let req_buffer_size = MultiByteToWideChar(CP_UTF8, 0, src.as_ptr().cast(), src_len, ptr::null_mut(), 0) + 1;
+        let req_buffer_size = MultiByteToWideChar(CP_UTF8 as _, 0, src.as_ptr().cast(), src_len, ptr::null_mut(), 0) + 1;
 
         // ensure buffer capacity
         buffer.clear();
@@ -55,7 +67,7 @@ fn str_to_wstr(src: &str, buffer: &mut Vec<WCHAR>) -> Option<*const WCHAR> {
 
         // write to destination buffer
         let chars_written =
-            MultiByteToWideChar(CP_UTF8, 0, src.as_ptr().cast(), src_len, buffer.as_mut_ptr(), req_buffer_size)
+            MultiByteToWideChar(CP_UTF8 as _, 0, src.as_ptr().cast(), src_len, buffer.as_mut_ptr(), req_buffer_size)
                 as usize;
 
         // append null terminator
@@ -120,6 +132,7 @@ unsafe fn set_close_button(hwnd: HWND, enabled: bool) {
 }
 
 pub(crate) struct Window {
+    _connection: connection::Connection,
     hwnd: HWND,
     state: *mut WindowState, // 'thread, volatile
     thread: Option<thread::JoinHandle<()>>,
@@ -144,7 +157,7 @@ struct WindowState {
     qpc_previous: u64,
 }
 
-unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
+unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
     // A window class describes the default state of a window, more or less.
     // It needs to be registered to the system-global table if it has not been.
     let mut class = mem::MaybeUninit::<WNDCLASSEXW>::uninit();
@@ -157,10 +170,11 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
     let mut class_name_wstr = Vec::<WCHAR>::new();
     let class_name = str_to_wstr(&*builder.class_name, class_name_wstr.as_mut())
         .ok_or(Error::OutOfMemory)?;
-
+        
     // Check if it's been registered by trying to query information about the class.
     // If it hasn't been, fill in the info and register it.
-    if GetClassInfoExW(base_hinstance(), class_name, class_ptr) == 0 {
+    let class_created_here = GetClassInfoExW(base_hinstance(), class_name, class_ptr) == 0;
+    if class_created_here {
         // Failure sets a global error code, but we don't care, we know the error
         SetLastError(ERROR_SUCCESS);
 
@@ -185,6 +199,8 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
 
         // Unlike what most libraries think, this is fallible, even if the input is valid.
         // It's quite trivial to fill up the (system-global) User Atom Table (2^16-1 entries) and OOM.
+        // TODO: there's a race condition here. Creating two windows at the same time may lead to both thinking their
+        // class is not registered and trying to register it, in which case one of them will hit this error.
         if RegisterClassExW(class) == 0 {
             return Err(Error::SystemResources);
         }
@@ -249,9 +265,15 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
         assert!(!hwnd.is_null());
         // TODO handle this ^
 
+        if class_created_here {
+            // the old value is returned, we can ignore this
+            let _ = set_class_storage(hwnd, 0, RAMEN_WINDOW_MARKER);
+        }
+
         let (cvar, mutex) = &*send;
         let mut lock = sync::mutex_lock(mutex);
         *lock = Some(Ok(Window {
+            _connection: builder.connection,
             hwnd,
             state: window_state.get(),
             thread: None,
@@ -299,7 +321,7 @@ unsafe fn make_window(builder: &window::Builder) -> Result<Window, Error> {
 }
 
 impl Window {
-    pub(crate) fn new(builder: &window::Builder) -> Result<Self, Error> {
+    pub(crate) fn new(builder: window::Builder) -> Result<Self, Error> {
         unsafe { make_window(builder) }
     }
 
@@ -841,6 +863,14 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             DefWindowProcW(hwnd, msg, wparam, lparam)
         },
 
+        // Custom message: The "real" destroy signal that won't be rejected.
+        // TODO: document the rejection emchanism somewhere
+        // Return 0.
+        RAMEN_WM_DROP => {
+            let _ = DestroyWindow(hwnd);
+            0
+        },
+
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
@@ -850,6 +880,7 @@ impl Drop for Window {
         unsafe {
             let state = &*user_state(self.hwnd);
             state.destroy.store(true, atomic::Ordering::Release);
+            let _ = PostMessageW(self.hwnd, RAMEN_WM_DROP, 0, 0);
             if let Some(result) = self.thread.take().map(thread::JoinHandle::join) {
                 if let Err(_err) = result {
                     // TODO: Not sure what to do here, honestly.

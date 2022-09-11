@@ -11,18 +11,18 @@ pub enum Event {
     Focus(bool),
 
     /// A [`Key`] was pressed.
-    #[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "input")))]
-    #[cfg_attr(not(feature = "nightly-docs"), cfg(feature = "input"))]
+    #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
     KeyboardDown(Key),
 
     /// A [`Key`] was auto-repeated by the system.
-    #[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "input")))]
-    #[cfg_attr(not(feature = "nightly-docs"), cfg(feature = "input"))]
+    #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
     KeyboardRepeat(Key),
 
     /// A [`Key`] was released.
-    #[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "input")))]
-    #[cfg_attr(not(feature = "nightly-docs"), cfg(feature = "input"))]
+    #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
     KeyboardUp(Key),
 }
 

@@ -1,152 +1,330 @@
 // TODO: I suppose we'll need some method of deciding at runtime whether to use x11 or wayland? This is just x11
-use crate::{error::Error, event::{CloseReason, Event}, util::sync::{Mutex, mutex_lock}, window};
-use super::ffi::{self, XCB};
+use crate::{error::Error, event::{CloseReason, Event}, util::sync::mutex_lock, connection, window};
+use super::ffi::*;
 
 use std::collections::HashMap;
-
-lazy_static::lazy_static! {
-    static ref EVENT_QUEUE: Mutex<HashMap<ffi::XcbWindow, Vec<Event>>> = Mutex::new(HashMap::with_capacity(8));
-}
 
 /// The initial capacity for any Vec<Event>
 /// Event is around 8 bytes in size, so it's fairly costless for this to be a large starting capacity.
 const QUEUE_SIZE: usize = 256;
 
+pub(crate) struct Connection {
+    display: *mut Display,
+    connection: *mut xcb_connection_t,
+    screen: *mut xcb_screen_t,
+    event_buffer: HashMap<xcb_window_t, Vec<Event>>,
+    hostname: Option<Vec<c_char>>,
+    atoms: Atoms,
+}
+
+#[derive(Clone, Copy)]
+struct Atoms {
+    wm_protocols: xcb_atom_t,
+    wm_delete_window: xcb_atom_t,
+    _net_wm_name: xcb_atom_t,
+    utf8_string: xcb_atom_t,
+    _net_wm_pid: xcb_atom_t,
+    wm_client_machine: xcb_atom_t,
+}
+
+impl Connection {
+    pub(crate) fn new() -> Result<Self, Error> {
+        unsafe {
+            libX11::load()?;
+            libX11_xcb::load()?;
+            libxcb::load()?;
+
+            let display = XOpenDisplay(std::ptr::null_mut());
+            if display.is_null() {
+                // TODO: Unclear why this could fail when passing nullptr to it. Maybe the system has no screens?
+                // Maybe the underlying connection has failed, but how would we check?
+                return Err(Error::Unknown)
+            }
+            let screen_num = XDefaultScreen(display);
+            let connection = XGetXCBConnection(display);
+            XSetEventQueueOwner(display, EventQueueOwner::XCBOwnsEventQueue);
+            let mut iter = xcb_setup_roots_iterator(xcb_get_setup(connection));
+            for _ in 0..screen_num {
+                xcb_screen_next(&mut iter);
+            }
+            let screen = iter.data;
+            let atoms = Atoms::new(connection)?;
+
+            // Try to get machine's hostname
+            let mut len = 16;
+            let mut hostname: Vec<c_char> = Vec::new();
+            let hostname = loop {
+                hostname.resize_with(len, Default::default); // Make sure vec is full of null-terminators
+                let err = libc::gethostname((&mut hostname).as_mut_ptr(), len);
+                if err == 0 {
+                    // We got the hostname, now let's make sure the i8 vec is exactly the right size with no extra nulls
+                    if let Some(pos) = hostname.iter().position(|x| *x == 0) {
+                        hostname.set_len(pos + 1);
+                    } else {
+                        // There are no null-terminators, this means the vec was exactly the size of the hostname
+                        // So we need to push a null-terminator onto it ourselves
+                        hostname.push(0);
+                    }
+                    //hostname.shrink_to_fit(); // useful?
+                    break Some(hostname);
+                } else {
+                    // Either ENAMETOOLONG or EINVAL would both indicate that the hostname is longer than the buffer
+                    match len.checked_mul(2) {
+                        Some(l) if l <= (1 << 16) => len = l,
+                        _ => break None, // Give up if some sanity limit is reached or we overflowed usize..
+                    }
+                }
+            };
+
+            Ok(Connection {
+                display,
+                connection,
+                screen,
+                atoms,
+                hostname,
+                event_buffer: HashMap::new(),
+            })
+        }
+    }
+
+    // Helper wrapper for `xcb_connection_has_error` for use with `?`. Assumes pointer is valid.
+    unsafe fn check(c: *mut xcb_connection_t) -> Result<(), Error> {
+        let err = xcb_connection_has_error(c);
+        match err {
+            XCB_NONE => Ok(()),
+            XCB_CONN_CLOSED_EXT_NOTSUPPORTED => Err(Error::Unsupported),
+            XCB_CONN_CLOSED_MEM_INSUFFICIENT => Err(Error::SystemResources),
+            _ => Err(Error::Invalid),
+        }
+    }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = xcb_flush(self.connection);
+            let _ = XCloseDisplay(self.display);
+        }
+    }
+}
+
+unsafe impl Send for Connection {}
+
+impl Atoms {
+    unsafe fn new(connection: *mut xcb_connection_t) -> Result<Self, Error> {
+        const N_ATOMS: usize = 6;
+        let mut atom_replies = [0 as c_uint; N_ATOMS];
+        let mut atoms = [0 as xcb_atom_t; N_ATOMS];
+        macro_rules! atom {
+            ($n:literal, $name:literal) => {{
+                atom_replies[$n] = xcb_intern_atom(connection, 0, $name.len() as u16, $name.as_ptr().cast());
+            }};
+        }
+        atom!(0, "WM_PROTOCOLS");
+        atom!(1, "WM_DELETE_WINDOW");
+        atom!(2, "_NET_WM_NAME");
+        atom!(3, "UTF8_STRING");
+        atom!(4, "_NET_WM_PID");
+        atom!(5, "WM_CLIENT_MACHINE");
+        for (r, seq) in atoms.iter_mut().zip(atom_replies.into_iter()) {
+            let mut err: *mut xcb_generic_error_t = std::ptr::null_mut();
+            let reply = xcb_intern_atom_reply(connection, seq, &mut err);
+            if !reply.is_null() {
+                *r = (*reply).atom;
+                free(reply.cast());
+            } else {
+                free(err.cast());
+                // xcb_intern_atom can only fail due to alloc error or value error,
+                // and this can't be a value error because we always pass a valid value (0) for only_if_exists
+                return Err(Error::SystemResources);
+            }
+        }
+        Ok(Self {
+            wm_protocols: atoms[0],
+            wm_delete_window: atoms[1],
+            _net_wm_name: atoms[2],
+            utf8_string: atoms[3],
+            _net_wm_pid: atoms[4],
+            wm_client_machine: atoms[5],
+        })
+    }
+}
+
 pub(crate) struct Window {
-    handle: ffi::XcbWindow,
+    connection: connection::Connection,
+    handle: xcb_window_t,
     event_buffer: Vec<Event>,
 }
 
 impl Window {
-    pub(crate) fn new(builder: &window::Builder) -> Result<Self, Error> {
-        // Check if XCB setup failed, possibly due to libxcb or an extension not being installed.
-        // This is recoverable - for example, the user might want to try Wayland setup if this fails.
-        if XCB.is_valid() {
+    pub(crate) fn new(builder: window::Builder) -> Result<Self, Error> {
+        unsafe {
+            let mut connection_mtx = mutex_lock(&builder.connection.0);
+            let connection: &mut Connection = &mut *connection_mtx;
+            let c = connection.connection;
+            let hostname = connection.hostname.as_ref();
+
             // Generate an ID for our new window
-            let id = match XCB.generate_id() {
+            let xid = xcb_generate_id(c);
+            if xid == !0u32 {
                 // xcb_generate_id returns -1 on any type of failure, most likely because it has run out of
                 // resources to fulfil requests for new IDs. It could also mean the connection has been closed.
-                Some(id) => id,
-                None => return Err(Error::SystemResources),
-            };
+                return Err(Error::SystemResources);
+            }
 
-            // Clear the event queue - this is in case any events are in the queue with this window ID we just generated,
-            // since X may have re-used it from a previous window
-            {
-                // Scope is so we don't hold the mutex longer than necessary
-                let mut map = mutex_lock(&EVENT_QUEUE);
-                if let Some((event, window)) = XCB.poll_event().and_then(process_event) {
-                    if let Some(queue) = map.get_mut(&window) {
+            // Clear the event queue, in case any events remain in it intended for a previous object with this xid we just claimed
+            let event = xcb_poll_for_event(c);
+            if !event.is_null() {
+                if let Some((event, window)) = process_event(&connection.atoms, event) {
+                    if let Some(queue) = connection.event_buffer.get_mut(&window) {
                         queue.push(event);
                     }
                 }
-                while let Some(event) = XCB.poll_queued_event() {
-                    if let Some((event, window)) = process_event(event) {
-                        if let Some(queue) = map.get_mut(&window) {
-                            queue.push(event);
-                        }
+            }
+            let mut event = xcb_poll_for_queued_event(c);
+            while !event.is_null() {
+                if let Some((event, window)) = process_event(&connection.atoms, event) {
+                    if let Some(queue) = connection.event_buffer.get_mut(&window) {
+                        queue.push(event);
                     }
                 }
+                event = xcb_poll_for_queued_event(c);
             }
 
             // Create the new X window
-            let value_mask = ffi::XCB_CW_BACK_PIXEL | ffi::XCB_CW_EVENT_MASK;
-            let value_list = &[
-                XCB.white_pixel(),
-                ffi::XCB_EVENT_MASK_KEY_PRESS | ffi::XCB_EVENT_MASK_KEY_RELEASE | ffi::XCB_EVENT_MASK_BUTTON_PRESS | ffi::XCB_EVENT_MASK_BUTTON_RELEASE |
-                    ffi::XCB_EVENT_MASK_FOCUS_CHANGE,
-            ];
-            match XCB.create_window(id, 1, 1, 800, 608, 1, value_mask, value_list) {
+            const EVENT_MASK: u32 = XCB_EVENT_MASK_KEY_PRESS
+                | XCB_EVENT_MASK_KEY_RELEASE
+                | XCB_EVENT_MASK_BUTTON_PRESS
+                | XCB_EVENT_MASK_BUTTON_RELEASE
+                | XCB_EVENT_MASK_FOCUS_CHANGE;
+            const VALUE_MASK: u32 = XCB_CW_EVENT_MASK;
+            const VALUE_LIST: &[u32] = &[EVENT_MASK];
+
+            let create_error = xcb_request_check(c, xcb_create_window_checked(
+                c,
+                XCB_COPY_FROM_PARENT,
+                xid,
+                (*connection.screen).root, // idk
+                0,
+                0,
+                800,
+                608,
+                0,
+                XCB_WINDOW_CLASS_INPUT_OUTPUT,
+                XCB_COPY_FROM_PARENT.into(),
+                VALUE_MASK,
+                VALUE_LIST.as_ptr(),
+            ));
+            if !create_error.is_null() {
                 // Reasons CreateWindow may fail are:
-                // Alloc - maps to Error::OutOfMemory
+                // Alloc - maps to Error::SystemResources
                 // Colormap - we don't currently pass a colormap
                 // Cursor - we do not pass a Cursor
                 // IDChoice - we got our ID straight from xcb_generate_id and didn't use it for anything else
                 // Match - bad configuration of user params, so maps to Error::Invalid
                 // Pixmap - we don't currently pass a pixmap
                 // Value - bad value for a user param, so maps to Error::Invalid
-                // Window - all window IDs we use are checked in advance
-                Ok(()) => (),
-                Err(ffi::Error(ffi::XCB_ALLOC)) => return Err(Error::OutOfMemory),
-                Err(_) => return Err(Error::Invalid),
+                // Window - we just created that XID so that's not possible
+                let errno = (*create_error).error_code;
+                free(create_error.cast());
+                if errno as c_int == XCB_ALLOC {
+                    return Err(Error::SystemResources);
+                } else {
+                    return Err(Error::Invalid);
+                }
             }
 
-            // Add WM_DELETE_WINDOW to WM_PROTOCOLS - important so we can hook the user clicking the X button
-            XCB.change_property(
-                ffi::XCB_PROP_MODE_REPLACE,
-                id,
-                XCB.atom_wm_protocols,
-                ffi::XCB_ATOM_ATOM,
+            // Add WM_DELETE_WINDOW to WM_PROTOCOLS
+            let _ = xcb_change_property(
+                c,
+                XCB_PROP_MODE_REPLACE,
+                xid,
+                connection.atoms.wm_protocols,
+                XCB_ATOM_ATOM,
                 32,
                 1,
-                (&XCB.atom_wm_delete_window) as *const u32 as _,
+                (&connection.atoms.wm_delete_window) as *const u32 as _,
             );
 
             // Try to write the requested window title to the WM_NAME and _NET_WM_NAME properties
-            // Note: multibyte characters won't render correctly in WM_NAME, but any correctly-implemented WM will
+            // Note: multibyte characters won't render correctly in WM_NAME, but any modern and worthwhile WM will
             // prioritise using _NET_WM_NAME which is UTF-8 as standard, that's why it's better to write both.
             let title = builder.title.as_ref();
-            XCB.change_property(
-                ffi::XCB_PROP_MODE_REPLACE,
-                id,
-                XCB.atom_net_wm_name,
-                XCB.atom_utf8_string,
+            let _ = xcb_change_property(
+                c,
+                XCB_PROP_MODE_REPLACE,
+                xid,
+                connection.atoms._net_wm_name,
+                connection.atoms.utf8_string,
                 8,
                 title.bytes().len() as _,
                 title.as_ptr().cast(),
             );
-            XCB.change_property(
-                ffi::XCB_PROP_MODE_REPLACE,
-                id,
-                ffi::XCB_ATOM_WM_NAME,
-                ffi::XCB_ATOM_STRING,
+            let _ = xcb_change_property(
+                c,
+                XCB_PROP_MODE_REPLACE,
+                xid,
+                XCB_ATOM_WM_NAME,
+                XCB_ATOM_STRING,
                 8,
                 title.bytes().len() as _,
                 title.as_ptr().cast(),
             );
 
-            // Get PID of current process and write that to _NET_WM_PID
-            let pid = unsafe { libc::getpid() };
-            XCB.change_property(
-                ffi::XCB_PROP_MODE_REPLACE,
-                id,
-                XCB.atom_net_wm_pid,
-                ffi::XCB_ATOM_CARDINAL,
-                32,
-                1,
-                (&pid) as *const i32 as _,
-            );
-            
-            // Flush FFI requests. If this fails, it can only mean that the connection was invalidated at some point
-            // since we opened it. The most plausible cause of this would be a lack of system resources.
-            if XCB.flush().is_err() {
-                // No point trying to destroy the window here if the connection is already closed...
-                return Err(Error::SystemResources)
+            // If hostname is known, get PID of current process and write that to _NET_WM_PID
+            // But don't write either of these properties if hostname is not known, because:
+            // "If _NET_WM_PID is set, the ICCCM-specified property WM_CLIENT_MACHINE MUST also be set." - EWMH spec
+            if let Some(hostname) = hostname {
+                let pid = getpid();
+                let _ = xcb_change_property(
+                    c,
+                    XCB_PROP_MODE_REPLACE,
+                    xid,
+                    connection.atoms._net_wm_pid,
+                    XCB_ATOM_CARDINAL,
+                    32,
+                    1,
+                    (&pid) as *const i32 as _,
+                );
+
+                let _ = xcb_change_property(
+                    c,
+                    XCB_PROP_MODE_REPLACE,
+                    xid,
+                    connection.atoms.wm_client_machine,
+                    XCB_ATOM_STRING,
+                    8,
+                    hostname.len() as _,
+                    hostname.as_ptr().cast(),
+                );
             }
 
-            // And finally, try to map the window to the screen
-            // If successful the window will become visible at this point.
-            if XCB.map_window(id).is_err() {
+            // Try to map window to screen
+            let map_error = xcb_request_check(c, xcb_map_window_checked(c, xid));
+            if !map_error.is_null() {
                 // Can only fail due to "Window" error, so I think this is unreachable in practice
-                let _ = XCB.destroy_window(id);
-                return Err(Error::Invalid)
+                free(map_error.cast());
+                Connection::check(c)?;
+                return Err(Error::Unknown)
             }
 
             // Now we'll insert an entry into the EVENT_QUEUE hashmap for this window we've created.
-            // We do this even if the queue probably won't be used, as it's the soundest way to ensure memory gets cleaned up.
-            let _ = mutex_lock(&EVENT_QUEUE).insert(id, Vec::with_capacity(QUEUE_SIZE));
-            
-            Ok(Window { handle: id, event_buffer: Vec::with_capacity(QUEUE_SIZE) })
-        } else {
-            match XCB.setup_error() {
-                ffi::SetupError::DlError(s) => Err(Error::Text(s.into())),
-                ffi::SetupError::NoScreens => Err(Error::Unsupported),
-                ffi::SetupError::ConnError(ffi::Error(ffi::XCB_CONN_CLOSED_EXT_NOTSUPPORTED)) => Err(Error::Unsupported),
-                ffi::SetupError::ConnError(ffi::Error(ffi::XCB_CONN_CLOSED_MEM_INSUFFICIENT)) => Err(Error::OutOfMemory),
-                ffi::SetupError::ConnError(_) => Err(Error::Invalid),
-                ffi::SetupError::XcbError(ffi::Error(ffi::XCB_ALLOC)) => Err(Error::OutOfMemory),
-                ffi::SetupError::XcbError(_) => Err(Error::Invalid),
+            // We do this even if the queue probably won't be used, as it's the soundest way to ensure
+            // memory gets cleaned up.
+            let _ = connection.event_buffer.insert(xid, Vec::with_capacity(QUEUE_SIZE));
+
+            // TODO: This "returns <= 0 on error", how is that value significant? Is it -EINVAL type thing?
+            if xcb_flush(c) <= 0 {
+                Connection::check(c)?;
+                return Err(Error::Unknown)
             }
+
+            std::mem::drop(connection_mtx);
+            Ok(Window {
+                connection: builder.connection,
+                handle: xid,
+                event_buffer: Vec::with_capacity(QUEUE_SIZE),
+            })
         }
     }
 
@@ -155,38 +333,44 @@ impl Window {
     }
 
     pub(crate) fn poll_events(&mut self) {
-        // First: lock the global event queue, which is used as backup storage for events
-        // which have been pulled but are not immediately relevant
-        let mut map = mutex_lock(&EVENT_QUEUE);
+        unsafe {
+            // First: lock the global event queue, which is used as backup storage for events
+            // which have been pulled but are not immediately relevant
+            let mut connection_ = mutex_lock(&self.connection.0);
+            let Connection { atoms, connection: c, event_buffer: map, .. } = &mut *connection_;
 
-        // Clear our event buffer of the previous set of events
-        self.event_buffer.clear();
+            // Clear our event buffer of the previous set of events
+            self.event_buffer.clear();
 
-        // Fill our event buffer with any events which may have been stored in the global event queue,
-        // also clearing them from the global queue
-        // Note: this queue SHOULD always exist, but it's possible some bad or malicious user code might get a
-        // `None` result, so it's better to check and take no action if there's no queue to copy from...
-        if let Some(queue) = map.get_mut(&self.handle) {
-            std::mem::swap(&mut self.event_buffer, queue);
-        }
-
-        // Call `poll_event` once, which populates XCB's internal linked list from the connection
-        if let Some((event, window)) = XCB.poll_event().and_then(process_event) {
-            // We have a ramen event relevant to some window - but is it this one?
-            if window == self.handle {
-                self.event_buffer.push(event);
-            } else if let Some(queue) = map.get_mut(&window) {
-                queue.push(event);
+            // Fill our event buffer with any events which may have been stored in the global event queue,
+            // also clearing them from the global queue
+            // Note: this queue SHOULD always exist, but it's possible some bad or malicious user code might get a
+            // `None` result, so it's better to check and take no action if there's no queue to copy from...
+            if let Some(queue) = map.get_mut(&self.handle) {
+                std::mem::swap(&mut self.event_buffer, queue);
             }
-        }
-        while let Some(event) = XCB.poll_queued_event() {
-            if let Some((event, window)) = process_event(event) {
-                // We have a ramen event relevant to some window - but is it this one?
-                if window == self.handle {
-                    self.event_buffer.push(event);
-                } else if let Some(queue) = map.get_mut(&window) {
-                    queue.push(event);
+
+            // Call `poll_event` once, which populates XCB's internal linked list from the connection
+            let event = xcb_poll_for_event(*c);
+            if !event.is_null() {
+                if let Some((event, window)) = process_event(atoms, event) {
+                    if window == self.handle {
+                        self.event_buffer.push(event);
+                    } else if let Some(queue) = map.get_mut(&window) {
+                        queue.push(event);
+                    }
                 }
+            }
+            let mut event = xcb_poll_for_queued_event(*c);
+            while !event.is_null() {
+                if let Some((event, window)) = process_event(atoms, event) {
+                    if window == self.handle {
+                        self.event_buffer.push(event);
+                    } else if let Some(queue) = map.get_mut(&window) {
+                        queue.push(event);
+                    }
+                }
+                event = xcb_poll_for_queued_event(*c);
             }
         }
     }
@@ -194,28 +378,33 @@ impl Window {
 
 impl Drop for Window {
     fn drop(&mut self) {
-        let _ = mutex_lock(&EVENT_QUEUE).remove(&self.handle);
-        if XCB.destroy_window(self.handle).is_ok() {
-            let _ = XCB.flush();
+        let mut connection_ = mutex_lock(&self.connection.0);
+        let connection = &mut connection_;
+        unsafe {
+            let _ = xcb_destroy_window(connection.connection, self.handle);
+            let _ = xcb_flush(connection.connection);
         }
     }
 }
 
-// For translating an ffi Event to a ramen Event
-fn process_event(ev: ffi::Event) -> Option<(Event, ffi::XcbWindow)> {
-    unsafe {
-        match ev {
-            ffi::Event::ClientMessage { format, client_data, r#type, window } => {
-                if format == 32 && r#type == XCB.atom_wm_protocols && client_data.data32[0] == XCB.atom_wm_delete_window {
-                    Some((Event::CloseRequest(CloseReason::SystemMenu), window))
-                } else {
-                    None
-                }
-            },
-            ffi::Event::Focus { window, state } => {
-                Some((Event::Focus(state), window))
-            },
-            //_ => None,
-        }
-    }
+unsafe fn process_event(atoms: &Atoms, ev: *mut xcb_generic_event_t) -> Option<(Event, xcb_window_t)> {
+    let mapping = match (*ev).response_type & !(1 << 7) {
+        XCB_CLIENT_MESSAGE => {
+            let event = &*(ev as *mut xcb_client_message_event_t);
+            if event.format == 32 && event.r#type == atoms.wm_protocols &&
+                event.client_data.data32[0] == atoms.wm_delete_window
+            {
+                Some((Event::CloseRequest(CloseReason::SystemMenu), event.window))
+            } else {
+                None
+            }
+        },
+        XCB_FOCUS_IN | XCB_FOCUS_OUT => {
+            let state = (*ev).response_type == XCB_FOCUS_IN;
+            Some((Event::Focus(state), (*(ev as *mut xcb_focus_in_event_t)).event))
+        },
+        _ => None,
+    };
+    free(ev.cast());
+    mapping
 }

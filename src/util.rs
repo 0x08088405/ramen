@@ -1,3 +1,75 @@
+#![allow(unused_macros)] // macros are unused in win32 at the moment?
+
+macro_rules! cstr {
+    ($($x:tt)+) => {{ concat!($($x)+, "\0").as_ptr().cast() }};
+}
+
+macro_rules! load {
+    ($($vis:vis $name:ident($type_name:ident) $($so_name:literal),+ {
+        $(fn $fn_name:ident($($arg_name:ident:$arg_ty:ty),+$(,)?) $(-> $ret:ty)?;)+
+    })+) => {
+        pub(self) enum __anyopaque {}
+        $(
+            #[link_section = ".bss"]
+            $vis static mut $name: ::std::mem::MaybeUninit<$type_name> = ::std::mem::MaybeUninit::uninit();
+            #[repr(C)]
+            $vis struct $type_name {
+                $($fn_name: unsafe extern "system" fn($($arg_ty),+) $(-> $ret)?),+,
+            }
+            impl $type_name {
+                $vis unsafe fn load() -> Result<(), crate::error::Error> {
+                    static INIT: ::std::sync::Once = ::std::sync::Once::new();
+                    static mut LOADED: bool = false;
+                    INIT.call_once(|| {
+                        let mut fp = $name.as_mut_ptr() as *mut *mut __anyopaque;
+                        let mut handle = ::std::ptr::null_mut();
+                        for name in [$(cstr!($so_name)),+] {
+                            handle = dlopen(name);
+                            if !handle.is_null() { break; }
+                        }
+                        let _ = dlerror();
+                        if handle.is_null() { return; }
+                        for sym in [$(cstr!(stringify!($fn_name))),+] {
+                            *fp = dlsym(handle, sym).cast();
+                            fp = fp.offset(1);
+                        }
+                        LOADED = true;
+                    });
+                    let err_start = dlerror();
+                    if err_start.is_null() {
+                        if LOADED {
+                            Ok(())
+                        } else {
+                            Err(crate::error::Error::Unsupported)
+                        }
+                    } else {
+                        let cstr = std::ffi::CStr::from_ptr(err_start);
+                        Err(crate::error::Error::Text(String::from_utf8_lossy(cstr.to_bytes())))
+                    }
+                }
+            }
+            $(#[inline(always)] $vis unsafe fn $fn_name($($arg_name:$arg_ty),+) $(-> $ret)? {
+                ((&*$name.as_ptr()).$fn_name)($($arg_name),+)
+            })*
+        )*
+    };
+}
+
+
+
+
+
+
+
+
+
+
+// fucking mess below
+
+
+
+
+
 use std::collections::TryReserveError;
 
 pub(crate) trait TryPush<T> {
@@ -16,7 +88,7 @@ impl<T> TryPush<T> for Vec<T> {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[allow(dead_code, unused_imports)]
 pub(crate) mod sync {
     pub(crate) use self::imp::{cvar_notify_one, cvar_wait, mutex_lock, Condvar, Mutex, MutexGuard};
 
@@ -58,30 +130,6 @@ pub(crate) mod sync {
         pub(crate) fn cvar_wait<T>(cvar: &Condvar, guard: &mut MutexGuard<T>) {
             cvar.wait(guard);
         }
-
-        #[inline]
-        pub(crate) fn mutex_lock<T>(mtx: &Mutex<T>) -> MutexGuard<T> {
-            mtx.lock()
-        }
-    }
-}
-
-#[cfg(target_os = "linux")]
-pub(crate) mod sync {
-    pub(crate) use self::imp::{mutex_lock, Mutex};
-
-    #[cfg(not(feature = "parking-lot"))]
-    pub(crate) mod imp {
-        pub(crate) use std::sync::{Mutex, MutexGuard};
-
-        pub(crate) fn mutex_lock<T>(mtx: &Mutex<T>) -> MutexGuard<T> {
-            mtx.lock().expect("mutex poisoned (this is a bug)")
-        }
-    }
-
-    #[cfg(feature = "parking-lot")]
-    pub(crate) mod imp {
-        pub(crate) use parking_lot::{Mutex, MutexGuard};
 
         #[inline]
         pub(crate) fn mutex_lock<T>(mtx: &Mutex<T>) -> MutexGuard<T> {
