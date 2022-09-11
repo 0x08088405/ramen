@@ -1,3 +1,4 @@
+#[cfg(feature = "input")]
 use crate::input::Key;
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq)]
