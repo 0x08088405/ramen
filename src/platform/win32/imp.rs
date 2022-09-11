@@ -199,6 +199,8 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
 
         // Unlike what most libraries think, this is fallible, even if the input is valid.
         // It's quite trivial to fill up the (system-global) User Atom Table (2^16-1 entries) and OOM.
+        // TODO: there's a race condition here. Creating two windows at the same time may lead to both thinking their
+        // class is not registered and trying to register it, in which case one of them will hit this error.
         if RegisterClassExW(class) == 0 {
             return Err(Error::SystemResources);
         }
