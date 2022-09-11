@@ -2,6 +2,8 @@
 #![allow(clippy::too_many_arguments)]
 
 pub(super) use libc::{c_char, c_int, c_uint, c_void, free, getpid};
+#[cfg(feature = "input")]
+pub(super) use input::*;
 
 use libc::{dlsym, dlerror};
 unsafe fn dlopen(name: *const c_char) -> *mut c_void {
@@ -22,6 +24,7 @@ load! {
         //fn xcb_connect(displayname: *const c_char, screenp: *mut c_int) -> *mut xcb_connection_t;
         fn xcb_connection_has_error(c: *mut xcb_connection_t) -> c_int;
         //fn xcb_disconnect(c: *mut xcb_connection_t);
+        fn xcb_discard_reply(c: *mut xcb_connection_t, sequence: c_uint);
         fn xcb_get_setup(c: *mut xcb_connection_t) -> *const xcb_setup_t;
         fn xcb_setup_roots_iterator(R: *const xcb_setup_t) -> xcb_screen_iterator_t;
         fn xcb_screen_next(i: *mut xcb_screen_iterator_t);
@@ -69,6 +72,11 @@ load! {
         fn xcb_poll_for_event(c: *mut xcb_connection_t) -> *mut xcb_generic_event_t;
         fn xcb_poll_for_queued_event(c: *mut xcb_connection_t) -> *mut xcb_generic_event_t;
         fn xcb_destroy_window(c: *mut xcb_connection_t, xid: xcb_window_t) -> c_uint;
+        fn xcb_query_extension(c: *mut xcb_connection_t, name_len: u16, name: *const c_char) -> c_uint;
+        fn xcb_query_extension_reply(c: *mut xcb_connection_t, sequence: c_uint, e: *mut *mut xcb_generic_error_t) -> *mut xcb_query_extension_reply_t;
+    }
+    pub(super) xinput(libxcb_xinput) "libxcb-xinput.so.0", "libxcb-xinput.so" {
+        fn xcb_input_xi_select_events_checked(c: *mut xcb_connection_t, window: xcb_window_t, num_mask: u16, masks: *mut xcb_input_event_mask_t) -> c_uint;
     }
 }
 
@@ -90,9 +98,11 @@ pub(super) const XCB_COPY_FROM_PARENT: u8 = 0;
 // pub(super) const XCB_KEY_RELEASE: u8 = 3;
 // pub(super) const XCB_BUTTON_PRESS: u8 = 4;
 // pub(super) const XCB_BUTTON_RELEASE: u8 = 5;
-pub(super) const XCB_FOCUS_IN: u8 = 9;
-pub(super) const XCB_FOCUS_OUT: u8 = 10;
+//pub(super) const XCB_FOCUS_IN: u8 = 9;
+//pub(super) const XCB_FOCUS_OUT: u8 = 10;
 pub(super) const XCB_CLIENT_MESSAGE: u8 = 33;
+#[cfg(feature = "input")]
+pub(super) const XCB_GE_GENERIC: u8 = 35;
 
 pub(super) const XCB_PROP_MODE_REPLACE: u8 = 0;
 //pub(super) const XCB_PROP_MODE_APPEND: u8 = 1;
@@ -105,11 +115,8 @@ pub(super) const XCB_ATOM_STRING: xcb_atom_t = 31;
 pub(super) const XCB_ATOM_WM_NAME: xcb_atom_t = 39;
 
 pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
-pub(super) const XCB_EVENT_MASK_KEY_PRESS: u32 = 1;
-pub(super) const XCB_EVENT_MASK_KEY_RELEASE: u32 = 2;
+#[cfg(feature = "input")]
 pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
-pub(super) const XCB_EVENT_MASK_BUTTON_RELEASE: u32 = 8;
-pub(super) const XCB_EVENT_MASK_FOCUS_CHANGE: u32 = 2097152;
 
 pub(super) const XCB_NONE: c_int = 0;
 pub(super) const XCB_ALLOC: c_int = 11;
@@ -166,6 +173,18 @@ pub(super) struct xcb_intern_atom_reply_t {
 }
 
 #[repr(C)]
+pub(super) struct xcb_query_extension_reply_t {
+    pub(super) response_type: u8,
+    pub(super) pad0: u8,
+    pub(super) sequence: u16,
+    pub(super) length: u32,
+    pub(super) present: u8,
+    pub(super) major_opcode: u8,
+    pub(super) first_event: u8,
+    pub(super) first_error: u8,
+}
+
+#[repr(C)]
 pub(super) struct xcb_generic_event_t {
     pub(super) response_type: u8,
     pub(super) _pad0: u8,
@@ -191,12 +210,148 @@ pub(crate) union ClientData {
     pub(crate) data32: [u32; 5],
 }
 
+#[cfg(feature = "input")]
 #[repr(C)]
-pub(super) struct xcb_focus_in_event_t {
+pub(super) struct xcb_ge_generic_event_t {
     pub(super) response_type: u8,
-    pub(super) send_event: u8,
+    pub(super) extension: u8,
     pub(super) sequence: u16,
-    pub(super) event: xcb_window_t,
-    pub(super) mode: u8,
-    pub(super) _pad0: [u8; 3],
+    pub(super) length: u32,
+    pub(super) event_type: u16,
+    pub(super) _pad0: [u8; 22],
+    pub(super) full_sequence: u32,
+}
+
+#[cfg(feature = "input")]
+mod input {
+    use super::*;
+
+    pub(in super::super) type xcb_input_device_id_t = u16;
+    pub(in super::super) type xcb_timestamp_t = u32;
+
+    //pub(in super::super) type xcb_input_xi_event_mask_t = u32;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_DEVICE_CHANGED: u32 = 2;
+    pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_KEY_PRESS: u32 = 4;
+    pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_KEY_RELEASE: u32 = 8;
+    pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_BUTTON_PRESS: u32 = 16;
+    pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_BUTTON_RELEASE: u32 = 32;
+    pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_MOTION: u32 = 64;
+    pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_ENTER: u32 = 128;
+    pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_LEAVE: u32 = 256;
+    pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_FOCUS_IN: u32 = 512;
+    pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_FOCUS_OUT: u32 = 1024;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_HIERARCHY: u32 = 2048;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_PROPERTY: u32 = 4096;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_RAW_KEY_PRESS: u32 = 8192;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_RAW_KEY_RELEASE: u32 = 16384;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_RAW_BUTTON_PRESS: u32 = 32768;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_RAW_BUTTON_RELEASE: u32 = 65536;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_RAW_MOTION: u32 = 131072;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_TOUCH_BEGIN: u32 = 262144;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_TOUCH_UPDATE: u32 = 524288;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_TOUCH_END: u32 = 1048576;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_TOUCH_OWNERSHIP: u32 = 2097152;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_RAW_TOUCH_BEGIN: u32 = 4194304;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_RAW_TOUCH_UPDATE: u32 = 8388608;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_RAW_TOUCH_END: u32 = 16777216;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_BARRIER_HIT: u32 = 33554432;
+    //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_BARRIER_LEAVE: u32 = 67108864;
+
+    //pub(in super::super) const XCB_INPUT_DEVICE_ALL: u16 = 0;
+    pub(in super::super) const XCB_INPUT_DEVICE_ALL_MASTER: u16 = 1;
+
+    pub(in super::super) const XCB_INPUT_KEY_PRESS: u16 = 2;
+    pub(in super::super) const XCB_INPUT_KEY_RELEASE: u16 = 3;
+    pub(in super::super) const XCB_INPUT_BUTTON_PRESS: u16 = 4;
+    pub(in super::super) const XCB_INPUT_BUTTON_RELEASE: u16 = 5;
+    pub(in super::super) const XCB_INPUT_MOTION: u16 = 6;
+    pub(in super::super) const XCB_INPUT_ENTER: u16 = 7;
+    pub(in super::super) const XCB_INPUT_LEAVE: u16 = 8;
+    pub(in super::super) const XCB_INPUT_FOCUS_IN: u16 = 9;
+    pub(in super::super) const XCB_INPUT_FOCUS_OUT: u16 = 10;
+
+    pub(in super::super) type xcb_input_fp1616_t = i32;
+
+    #[repr(C)]
+    pub(in super::super) struct xcb_input_event_mask_t {
+        pub(in super::super) deviceid: xcb_input_device_id_t,
+        pub(in super::super) mask_len: u16,
+    }
+
+    #[repr(C)]
+    pub(in super::super) struct xcb_input_enter_event_t {
+        pub(in super::super) response_type: u8,
+        pub(in super::super) extension: u8,
+        pub(in super::super) sequence: u16,
+        pub(in super::super) length: u32,
+        pub(in super::super) event_type: u16,
+        pub(in super::super) deviceid: xcb_input_device_id_t,
+        pub(in super::super) time: xcb_timestamp_t,
+        pub(in super::super) sourceid: xcb_input_device_id_t,
+        pub(in super::super) mode: u8,
+        pub(in super::super) detail: u8,
+        pub(in super::super) root: xcb_window_t,
+        pub(in super::super) event: xcb_window_t,
+        pub(in super::super) child: xcb_window_t,
+        pub(in super::super) full_sequence: u32,
+        pub(in super::super) root_x: xcb_input_fp1616_t,
+        pub(in super::super) root_y: xcb_input_fp1616_t,
+        pub(in super::super) event_x: xcb_input_fp1616_t,
+        pub(in super::super) event_y: xcb_input_fp1616_t,
+        pub(in super::super) same_screen: u8,
+        pub(in super::super) focus: u8,
+        pub(in super::super) buttons_len: u16,
+        pub(in super::super) mods: xcb_input_modifier_info_t,
+        pub(in super::super) group: xcb_input_group_info_t,
+    }
+    pub(in super::super) type xcb_input_leave_event_t = xcb_input_enter_event_t;
+    pub(in super::super) type xcb_input_focus_in_event_t = xcb_input_enter_event_t;
+    //pub(in super::super) type xcb_input_focus_out_event_t = xcb_input_enter_event_t;
+
+    #[repr(C)]
+    pub(in super::super) struct xcb_input_key_press_event_t {
+        pub(in super::super) response_type: u8,
+        pub(in super::super) extension: u8,
+        pub(in super::super) sequence: u16,
+        pub(in super::super) length: u32,
+        pub(in super::super) event_type: u16,
+        pub(in super::super) deviceid: xcb_input_device_id_t,
+        pub(in super::super) time: xcb_timestamp_t,
+        pub(in super::super) detail: u32,
+        pub(in super::super) root: xcb_window_t,
+        pub(in super::super) event: xcb_window_t,
+        pub(in super::super) child: xcb_window_t,
+        pub(in super::super) full_sequence: u32,
+        pub(in super::super) root_x: xcb_input_fp1616_t,
+        pub(in super::super) root_y: xcb_input_fp1616_t,
+        pub(in super::super) event_x: xcb_input_fp1616_t,
+        pub(in super::super) event_y: xcb_input_fp1616_t,
+        pub(in super::super) buttons_len: u16,
+        pub(in super::super) valuators_len: u16,
+        pub(in super::super) sourceid: xcb_input_device_id_t,
+        pub(in super::super) _pad0: [u8; 2],
+        pub(in super::super) flags: u32,
+        pub(in super::super) mods: xcb_input_modifier_info_t,
+        pub(in super::super) group: xcb_input_group_info_t,
+    }
+    pub(in super::super) type xcb_input_key_release_event_t = xcb_input_key_press_event_t;
+    pub(in super::super) type xcb_input_button_press_event_t = xcb_input_key_press_event_t;
+    pub(in super::super) type xcb_input_button_release_event_t = xcb_input_key_press_event_t;
+    pub(in super::super) type xcb_input_motion_event_t = xcb_input_key_press_event_t;
+
+    #[repr(C)]
+    pub(in super::super) struct xcb_input_modifier_info_t {
+        base: u32,
+        latched: u32,
+        locked: u32,
+        effective: u32,
+    }
+
+    #[repr(C)]
+    pub(in super::super) struct xcb_input_group_info_t {
+        base: u8,
+        latched: u8,
+        locked: u8,
+        effective: u8,
+    }
 }
