@@ -99,8 +99,8 @@ pub(super) const XCB_COPY_FROM_PARENT: u8 = 0;
 // pub(super) const XCB_KEY_RELEASE: u8 = 3;
 // pub(super) const XCB_BUTTON_PRESS: u8 = 4;
 // pub(super) const XCB_BUTTON_RELEASE: u8 = 5;
-pub(super) const XCB_FOCUS_IN: u8 = 9;
-pub(super) const XCB_FOCUS_OUT: u8 = 10;
+//pub(super) const XCB_FOCUS_IN: u8 = 9;
+//pub(super) const XCB_FOCUS_OUT: u8 = 10;
 pub(super) const XCB_CLIENT_MESSAGE: u8 = 33;
 pub(super) const XCB_GE_GENERIC: u8 = 35;
 
@@ -119,7 +119,7 @@ pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
 //pub(super) const XCB_EVENT_MASK_KEY_RELEASE: u32 = 2;
 pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
 //pub(super) const XCB_EVENT_MASK_BUTTON_RELEASE: u32 = 8;
-pub(super) const XCB_EVENT_MASK_FOCUS_CHANGE: u32 = 2097152;
+//pub(super) const XCB_EVENT_MASK_FOCUS_CHANGE: u32 = 2097152;
 
 pub(super) const XCB_NONE: c_int = 0;
 pub(super) const XCB_ALLOC: c_int = 11;
@@ -263,16 +263,6 @@ pub(crate) union ClientData {
 }
 
 #[repr(C)]
-pub(super) struct xcb_focus_in_event_t {
-    pub(super) response_type: u8,
-    pub(super) send_event: u8,
-    pub(super) sequence: u16,
-    pub(super) event: xcb_window_t,
-    pub(super) mode: u8,
-    pub(super) _pad0: [u8; 3],
-}
-
-#[repr(C)]
 pub(super) struct xcb_ge_generic_event_t {
     pub(super) response_type: u8,
     pub(super) extension: u8,
@@ -344,6 +334,7 @@ pub(super) type xcb_input_button_press_event_t = xcb_input_key_press_event_t;
 pub(super) type xcb_input_button_release_event_t = xcb_input_key_press_event_t;
 pub(super) type xcb_input_motion_event_t = xcb_input_key_press_event_t;
 
+#[repr(C)]
 pub(super) struct xcb_input_modifier_info_t {
     base: u32,
     latched: u32,
@@ -351,6 +342,7 @@ pub(super) struct xcb_input_modifier_info_t {
     effective: u32,
 }
 
+#[repr(C)]
 pub(super) struct xcb_input_group_info_t {
     base: u8,
     latched: u8,
