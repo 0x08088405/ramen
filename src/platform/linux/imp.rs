@@ -58,8 +58,8 @@ impl Connection {
             let atoms = Atoms::new(connection)?;
 
             // Make sure xinput is available
-            #[allow(unused_assignments)]
-            let mut xi_opcode = 0;
+            #[cfg(feature = "input")]
+            let xi_opcode;
             #[cfg(feature = "input")]
             {
                 // xcb_query_extension cannot generate errors, so we don't check
