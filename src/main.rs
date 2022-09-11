@@ -1,4 +1,4 @@
-use ramen::event::Event;
+use ramen::{connection::Connection, event::Event}; // There's no actual error here it's an RA bug sorry in advance
 
 pub fn main() {
     let t = [std::thread::spawn(f)];
@@ -11,7 +11,7 @@ pub fn main() {
 }
 
 pub fn f() {
-    let connection = match ramen::connection::Connection::new() {
+    let connection = match Connection::new() {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Error setting up connection: {:?}", e);
@@ -35,6 +35,15 @@ pub fn f() {
                 },
                 Event::Focus(b) => {
                     println!("Window focus state: {}", b);
+                },
+                Event::KeyboardDown(k) => {
+                    println!("Key down: {:?}", k);
+                },
+                Event::KeyboardRepeat(k) => {
+                    println!("Key repeat: {:?}", k);
+                },
+                Event::KeyboardUp(k) => {
+                    println!("Key up: {:?}", k);
                 },
                 _ => (),
             }
