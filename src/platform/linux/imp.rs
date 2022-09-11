@@ -30,6 +30,7 @@ struct Atoms {
 
 #[derive(Clone, Copy)]
 struct Extensions {
+    #[cfg(feature = "input")]
     xinput: u8,
 }
 
@@ -57,23 +58,28 @@ impl Connection {
             let atoms = Atoms::new(connection)?;
 
             // Make sure xinput is available
-            // xcb_query_extension cannot generate errors, so we don't check
-            let xi_name = "XInputExtension";
-            let xi = xcb_query_extension_reply(
-                connection,
-                xcb_query_extension(connection, xi_name.bytes().len() as _, xi_name.as_ptr().cast()),
-                std::ptr::null_mut(),
-            );
-            if xi.is_null() {
-                return Err(Error::SystemResources)
-            }
-            if (*xi).present == 0 {
-                return Err(Error::Unsupported)
-            }
-            let xi_opcode = (*xi).major_opcode;
-            free(xi.cast());
+            #[allow(unused_assignments)]
+            let mut xi_opcode = 0;
+            #[cfg(feature = "input")]
+            {
+                // xcb_query_extension cannot generate errors, so we don't check
+                let xi_name = "XInputExtension";
+                let xi = xcb_query_extension_reply(
+                    connection,
+                    xcb_query_extension(connection, xi_name.bytes().len() as _, xi_name.as_ptr().cast()),
+                    std::ptr::null_mut(),
+                );
+                if xi.is_null() {
+                    return Err(Error::SystemResources)
+                }
+                if (*xi).present == 0 {
+                    return Err(Error::Unsupported)
+                }
+                xi_opcode = (*xi).major_opcode;
+                free(xi.cast());
 
-            libxcb_xinput::load()?;
+                libxcb_xinput::load()?;
+            }
 
             // Try to get machine's hostname
             let mut len = 16;
@@ -108,7 +114,10 @@ impl Connection {
                 event_buffer: HashMap::new(),
                 hostname,
                 atoms,
-                extensions: Extensions { xinput: xi_opcode },
+                extensions: Extensions {
+                    #[cfg(feature = "input")]
+                    xinput: xi_opcode,
+                },
             })
         }
     }
@@ -219,7 +228,10 @@ impl Window {
 
             // Create the new X window
             // ButtonPress is exclusive, so we request it in CreateWindow to make sure we get it first
+            #[cfg(feature = "input")]
             const EVENT_MASK: u32 = XCB_EVENT_MASK_BUTTON_PRESS;
+            #[cfg(not(feature = "input"))]
+            const EVENT_MASK: u32 = 0;
             const VALUE_MASK: u32 = XCB_CW_EVENT_MASK;
             const VALUE_LIST: &[u32] = &[EVENT_MASK];
 
@@ -258,23 +270,26 @@ impl Window {
             }
 
             // Select xinput events
-            // xcb_input_xi_select_events cannot generate errors so we use _checked and discard it
-            #[repr(C)]
-            struct XiMask {
-                head: xcb_input_event_mask_t,
-                body: u32,
+            #[cfg(feature = "input")]
+            {
+                // xcb_input_xi_select_events cannot generate errors so we use _checked and discard it
+                #[repr(C)]
+                struct XiMask {
+                    head: xcb_input_event_mask_t,
+                    body: u32,
+                }
+                let mut mask = XiMask {
+                    head: xcb_input_event_mask_t {
+                        deviceid: XCB_INPUT_DEVICE_ALL_MASTER,
+                        mask_len: 1,
+                    },
+                    body: XCB_INPUT_XI_EVENT_MASK_KEY_PRESS | XCB_INPUT_XI_EVENT_MASK_KEY_RELEASE
+                        | XCB_INPUT_XI_EVENT_MASK_BUTTON_PRESS | XCB_INPUT_XI_EVENT_MASK_BUTTON_RELEASE
+                        | XCB_INPUT_XI_EVENT_MASK_MOTION | XCB_INPUT_XI_EVENT_MASK_ENTER | XCB_INPUT_XI_EVENT_MASK_LEAVE
+                        | XCB_INPUT_XI_EVENT_MASK_FOCUS_IN | XCB_INPUT_XI_EVENT_MASK_FOCUS_OUT,
+                };
+                xcb_discard_reply(c, xcb_input_xi_select_events_checked(c, xid, 1, (&mut mask.head) as _));
             }
-            let mut mask = XiMask {
-                head: xcb_input_event_mask_t {
-                    deviceid: XCB_INPUT_DEVICE_ALL_MASTER,
-                    mask_len: 1,
-                },
-                body: XCB_INPUT_XI_EVENT_MASK_KEY_PRESS | XCB_INPUT_XI_EVENT_MASK_KEY_RELEASE
-                    | XCB_INPUT_XI_EVENT_MASK_BUTTON_PRESS | XCB_INPUT_XI_EVENT_MASK_BUTTON_RELEASE
-                    | XCB_INPUT_XI_EVENT_MASK_MOTION | XCB_INPUT_XI_EVENT_MASK_ENTER | XCB_INPUT_XI_EVENT_MASK_LEAVE
-                    | XCB_INPUT_XI_EVENT_MASK_FOCUS_IN | XCB_INPUT_XI_EVENT_MASK_FOCUS_OUT,
-            };
-            xcb_discard_reply(c, xcb_input_xi_select_events_checked(c, xid, 1, (&mut mask.head) as _));
 
             // Add WM_DELETE_WINDOW to WM_PROTOCOLS
             let _ = xcb_change_property(
@@ -447,6 +462,7 @@ unsafe fn process_event(atoms: &Atoms, extensions: &Extensions, ev: *mut xcb_gen
                 None
             }
         },
+        #[cfg(feature = "input")]
         XCB_GE_GENERIC => {
             let event = &*(ev as *mut xcb_ge_generic_event_t);
             if event.extension == extensions.xinput {
