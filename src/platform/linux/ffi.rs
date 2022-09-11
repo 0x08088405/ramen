@@ -223,7 +223,7 @@ pub(super) struct xcb_ge_generic_event_t {
 }
 
 #[cfg(feature = "input")]
-pub(super) mod input {
+mod input {
     use super::*;
 
     pub(in super::super) type xcb_input_device_id_t = u16;
