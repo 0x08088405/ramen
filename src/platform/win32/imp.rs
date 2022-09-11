@@ -30,6 +30,9 @@ impl Connection {
 /// On why it's a `usize` of all things, see the remarks on `set_class_storage`.
 const RAMEN_WINDOW_MARKER: usize = u32::from_le_bytes(*b"viri") as usize;
 
+/// Custom window message
+const RAMEN_WM_DROP: UINT = WM_USER + 0;
+
 /// Retrieves the base module [`HINSTANCE`].
 #[inline]
 pub fn base_hinstance() -> HINSTANCE {
@@ -167,10 +170,11 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
     let mut class_name_wstr = Vec::<WCHAR>::new();
     let class_name = str_to_wstr(&*builder.class_name, class_name_wstr.as_mut())
         .ok_or(Error::OutOfMemory)?;
-
+        
     // Check if it's been registered by trying to query information about the class.
     // If it hasn't been, fill in the info and register it.
-    if GetClassInfoExW(base_hinstance(), class_name, class_ptr) == 0 {
+    let class_created_here = GetClassInfoExW(base_hinstance(), class_name, class_ptr) == 0;
+    if class_created_here {
         // Failure sets a global error code, but we don't care, we know the error
         SetLastError(ERROR_SUCCESS);
 
@@ -258,6 +262,11 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
         );
         assert!(!hwnd.is_null());
         // TODO handle this ^
+
+        if class_created_here {
+            // the old value is returned, we can ignore this
+            let _ = set_class_storage(hwnd, 0, RAMEN_WINDOW_MARKER);
+        }
 
         let (cvar, mutex) = &*send;
         let mut lock = sync::mutex_lock(mutex);
@@ -852,6 +861,14 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             DefWindowProcW(hwnd, msg, wparam, lparam)
         },
 
+        // Custom message: The "real" destroy signal that won't be rejected.
+        // TODO: document the rejection emchanism somewhere
+        // Return 0.
+        RAMEN_WM_DROP => {
+            let _ = DestroyWindow(hwnd);
+            0
+        },
+
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
@@ -861,6 +878,7 @@ impl Drop for Window {
         unsafe {
             let state = &*user_state(self.hwnd);
             state.destroy.store(true, atomic::Ordering::Release);
+            let _ = PostMessageW(self.hwnd, RAMEN_WM_DROP, 0, 0);
             if let Some(result) = self.thread.take().map(thread::JoinHandle::join) {
                 if let Err(_err) = result {
                     // TODO: Not sure what to do here, honestly.
