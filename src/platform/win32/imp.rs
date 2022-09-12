@@ -15,6 +15,8 @@ use crate::{
 
 use std::{cell::UnsafeCell, hint, mem, ptr, sync::{atomic::{self, AtomicBool}, Arc}, thread};
 
+static CLASS_REGISTRY_GUARD: Mutex<()> = Mutex::new(());
+
 pub(crate) struct Connection;
 
 impl Connection {
@@ -173,6 +175,7 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
         
     // Check if it's been registered by trying to query information about the class.
     // If it hasn't been, fill in the info and register it.
+    let class_guard = sync::mutex_lock(&CLASS_REGISTRY_GUARD);
     let class_created_here = GetClassInfoExW(base_hinstance(), class_name, class_ptr) == 0;
     if class_created_here {
         // Failure sets a global error code, but we don't care, we know the error
@@ -199,12 +202,11 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
 
         // Unlike what most libraries think, this is fallible, even if the input is valid.
         // It's quite trivial to fill up the (system-global) User Atom Table (2^16-1 entries) and OOM.
-        // TODO: there's a race condition here. Creating two windows at the same time may lead to both thinking their
-        // class is not registered and trying to register it, in which case one of them will hit this error.
         if RegisterClassExW(class) == 0 {
             return Err(Error::SystemResources);
         }
     }
+    mem::drop(class_guard);
 
     let mut title_wstr = Vec::new();
     let _ = str_to_wstr(&*builder.title, &mut title_wstr).ok_or(Error::OutOfMemory)?;
