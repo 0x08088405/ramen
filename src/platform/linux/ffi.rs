@@ -27,7 +27,6 @@ load! {
         //fn xcb_connect(displayname: *const c_char, screenp: *mut c_int) -> *mut xcb_connection_t;
         fn xcb_connection_has_error(c: *mut xcb_connection_t) -> c_int;
         //fn xcb_disconnect(c: *mut xcb_connection_t);
-        #[cfg(feature = "input")]
         fn xcb_discard_reply(c: *mut xcb_connection_t, sequence: c_uint);
         fn xcb_get_setup(c: *mut xcb_connection_t) -> *const xcb_setup_t;
         fn xcb_setup_roots_iterator(R: *const xcb_setup_t) -> xcb_screen_iterator_t;
@@ -75,6 +74,7 @@ load! {
         ) -> *mut xcb_intern_atom_reply_t;
         fn xcb_poll_for_event(c: *mut xcb_connection_t) -> *mut xcb_generic_event_t;
         fn xcb_poll_for_queued_event(c: *mut xcb_connection_t) -> *mut xcb_generic_event_t;
+        fn xcb_send_event_checked(c: *mut xcb_connection_t, propagate: u8, destination: xcb_window_t, event_mask: u32, event: *const c_char) -> c_uint;
         fn xcb_destroy_window(c: *mut xcb_connection_t, xid: xcb_window_t) -> c_uint;
         #[cfg(feature = "input")]
         fn xcb_query_extension(c: *mut xcb_connection_t, name_len: u16, name: *const c_char) -> c_uint;
@@ -125,6 +125,8 @@ pub(super) const XCB_ATOM_WM_NAME: xcb_atom_t = 39;
 pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
 #[cfg(feature = "input")]
 pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
+pub(super) const XCB_EVENT_MASK_STRUCTURE_NOTIFY: u32 = 131072;
+pub(super) const XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT: u32 = 1048576;
 #[cfg(not(feature = "input"))]
 pub(super) const XCB_EVENT_MASK_FOCUS_CHANGE: u32 = 2097152;
 

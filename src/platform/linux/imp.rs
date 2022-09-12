@@ -9,11 +9,17 @@ use std::collections::HashMap;
 const QUEUE_SIZE: usize = 256;
 
 pub(crate) struct Connection {
+    details: ConnectionDetails,
+    event_buffer: HashMap<xcb_window_t, Vec<Event>>,
+    hostname: Option<Vec<c_char>>,
+}
+
+// Proxy struct for passing Connection details around without the allocated parts
+#[derive(Clone, Copy)]
+struct ConnectionDetails {
     display: *mut Display,
     connection: *mut xcb_connection_t,
     screen: *mut xcb_screen_t,
-    event_buffer: HashMap<xcb_window_t, Vec<Event>>,
-    hostname: Option<Vec<c_char>>,
     atoms: Atoms,
     extensions: Extensions,
 }
@@ -26,6 +32,7 @@ struct Atoms {
     utf8_string: xcb_atom_t,
     _net_wm_pid: xcb_atom_t,
     wm_client_machine: xcb_atom_t,
+    _net_wm_ping: xcb_atom_t,
 }
 
 #[derive(Clone, Copy)]
@@ -108,16 +115,18 @@ impl Connection {
             };
 
             Ok(Connection {
-                display,
-                connection,
-                screen,
+                details: ConnectionDetails {
+                    display,
+                    connection,
+                    screen,
+                    atoms,
+                    extensions: Extensions {
+                        #[cfg(feature = "input")]
+                        xinput: xi_opcode,
+                    },
+                },
                 event_buffer: HashMap::new(),
                 hostname,
-                atoms,
-                extensions: Extensions {
-                    #[cfg(feature = "input")]
-                    xinput: xi_opcode,
-                },
             })
         }
     }
@@ -136,9 +145,10 @@ impl Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
+        let _ = self.details.extensions;
         unsafe {
-            let _ = xcb_flush(self.connection);
-            let _ = XCloseDisplay(self.display);
+            let _ = xcb_flush(self.details.connection);
+            let _ = XCloseDisplay(self.details.display);
         }
     }
 }
@@ -147,7 +157,7 @@ unsafe impl Send for Connection {}
 
 impl Atoms {
     unsafe fn new(connection: *mut xcb_connection_t) -> Result<Self, Error> {
-        const N_ATOMS: usize = 6;
+        const N_ATOMS: usize = 7;
         let mut atom_replies = [0 as c_uint; N_ATOMS];
         let mut atoms = [0 as xcb_atom_t; N_ATOMS];
         macro_rules! atom {
@@ -161,6 +171,7 @@ impl Atoms {
         atom!(3, "UTF8_STRING");
         atom!(4, "_NET_WM_PID");
         atom!(5, "WM_CLIENT_MACHINE");
+        atom!(6, "_NET_WM_PING");
         for (r, seq) in atoms.iter_mut().zip(atom_replies.into_iter()) {
             let mut err: *mut xcb_generic_error_t = std::ptr::null_mut();
             let reply = xcb_intern_atom_reply(connection, seq, &mut err);
@@ -181,6 +192,7 @@ impl Atoms {
             utf8_string: atoms[3],
             _net_wm_pid: atoms[4],
             wm_client_machine: atoms[5],
+            _net_wm_ping: atoms[6],
         })
     }
 }
@@ -196,7 +208,7 @@ impl Window {
         unsafe {
             let mut connection_mtx = mutex_lock(&builder.connection.0);
             let connection: &mut Connection = &mut *connection_mtx;
-            let c = connection.connection;
+            let c = connection.details.connection;
             let hostname = connection.hostname.as_ref();
 
             // Generate an ID for our new window
@@ -210,7 +222,7 @@ impl Window {
             // Clear the event queue, in case any events remain in it intended for a previous object with this xid we just claimed
             let event = xcb_poll_for_event(c);
             if !event.is_null() {
-                if let Some((event, window)) = process_event(&connection.atoms, &connection.extensions, event, connection.display) {
+                if let Some((event, window)) = process_event(event, &connection.details) {
                     if let Some(queue) = connection.event_buffer.get_mut(&window) {
                         queue.push(event);
                     }
@@ -218,7 +230,7 @@ impl Window {
             }
             let mut event = xcb_poll_for_queued_event(c);
             while !event.is_null() {
-                if let Some((event, window)) = process_event(&connection.atoms, &connection.extensions, event, connection.display) {
+                if let Some((event, window)) = process_event(event, &connection.details) {
                     if let Some(queue) = connection.event_buffer.get_mut(&window) {
                         queue.push(event);
                     }
@@ -239,7 +251,7 @@ impl Window {
                 c,
                 XCB_COPY_FROM_PARENT,
                 xid,
-                (*connection.screen).root, // idk
+                (*connection.details.screen).root, // idk
                 0,
                 0,
                 800,
@@ -291,16 +303,20 @@ impl Window {
                 xcb_discard_reply(c, xcb_input_xi_select_events_checked(c, xid, 1, (&mut mask.head) as _));
             }
 
-            // Add WM_DELETE_WINDOW to WM_PROTOCOLS
+            // Setup WM_PROTOCOLS
+            let window_atoms = [
+                connection.details.atoms.wm_delete_window,
+                connection.details.atoms._net_wm_ping,
+            ];
             let _ = xcb_change_property(
                 c,
                 XCB_PROP_MODE_REPLACE,
                 xid,
-                connection.atoms.wm_protocols,
+                connection.details.atoms.wm_protocols,
                 XCB_ATOM_ATOM,
                 32,
-                1,
-                (&connection.atoms.wm_delete_window) as *const u32 as _,
+                window_atoms.len() as _,
+                (&window_atoms) as *const xcb_window_t as _,
             );
 
             // Try to write the requested window title to the WM_NAME and _NET_WM_NAME properties
@@ -311,8 +327,8 @@ impl Window {
                 c,
                 XCB_PROP_MODE_REPLACE,
                 xid,
-                connection.atoms._net_wm_name,
-                connection.atoms.utf8_string,
+                connection.details.atoms._net_wm_name,
+                connection.details.atoms.utf8_string,
                 8,
                 title.bytes().len() as _,
                 title.as_ptr().cast(),
@@ -337,7 +353,7 @@ impl Window {
                     c,
                     XCB_PROP_MODE_REPLACE,
                     xid,
-                    connection.atoms._net_wm_pid,
+                    connection.details.atoms._net_wm_pid,
                     XCB_ATOM_CARDINAL,
                     32,
                     1,
@@ -348,7 +364,7 @@ impl Window {
                     c,
                     XCB_PROP_MODE_REPLACE,
                     xid,
-                    connection.atoms.wm_client_machine,
+                    connection.details.atoms.wm_client_machine,
                     XCB_ATOM_STRING,
                     8,
                     hostname.len() as _,
@@ -395,13 +411,11 @@ impl Window {
             // which have been pulled but are not immediately relevant
             let mut connection_ = mutex_lock(&self.connection.0);
             let Connection {
-                display,
-                atoms,
-                extensions,
-                connection: c,
+                details,
                 event_buffer: map,
                 ..
             } = &mut *connection_;
+            let c = details.connection;
 
             // Clear our event buffer of the previous set of events
             self.event_buffer.clear();
@@ -415,9 +429,9 @@ impl Window {
             }
 
             // Call `poll_event` once, which populates XCB's internal linked list from the connection
-            let event = xcb_poll_for_event(*c);
+            let event = xcb_poll_for_event(c);
             if !event.is_null() {
-                if let Some((event, window)) = process_event(atoms, extensions, event, *display) {
+                if let Some((event, window)) = process_event(event, details) {
                     if window == self.handle {
                         self.event_buffer.push(event);
                     } else if let Some(queue) = map.get_mut(&window) {
@@ -425,16 +439,16 @@ impl Window {
                     }
                 }
             }
-            let mut event = xcb_poll_for_queued_event(*c);
+            let mut event = xcb_poll_for_queued_event(c);
             while !event.is_null() {
-                if let Some((event, window)) = process_event(atoms, extensions, event, *display) {
+                if let Some((event, window)) = process_event(event, details) {
                     if window == self.handle {
                         self.event_buffer.push(event);
                     } else if let Some(queue) = map.get_mut(&window) {
                         queue.push(event);
                     }
                 }
-                event = xcb_poll_for_queued_event(*c);
+                event = xcb_poll_for_queued_event(c);
             }
         }
     }
@@ -445,25 +459,35 @@ impl Drop for Window {
         let mut connection_ = mutex_lock(&self.connection.0);
         let connection = &mut connection_;
         unsafe {
-            let _ = xcb_destroy_window(connection.connection, self.handle);
-            let _ = xcb_flush(connection.connection);
+            let _ = xcb_destroy_window(connection.details.connection, self.handle);
+            let _ = xcb_flush(connection.details.connection);
         }
     }
 }
 
-unsafe fn process_event(atoms: &Atoms, extensions: &Extensions, ev: *mut xcb_generic_event_t, display: *mut Display) -> Option<(Event, xcb_window_t)> {
-    #[cfg(not(feature = "input"))]
-    {
-        _ = (display, extensions);
-    }
-
+unsafe fn process_event(ev: *mut xcb_generic_event_t, details: &ConnectionDetails) -> Option<(Event, xcb_window_t)> {
     let mapping = match (*ev).response_type & !(1 << 7) {
         XCB_CLIENT_MESSAGE => {
-            let event = &*(ev as *mut xcb_client_message_event_t);
-            if event.format == 32 && event.r#type == atoms.wm_protocols &&
-                event.client_data.data32[0] == atoms.wm_delete_window
-            {
-                Some((Event::CloseRequest(CloseReason::SystemMenu), event.window))
+            let event = &mut *(ev as *mut xcb_client_message_event_t);
+            if event.r#type == details.atoms.wm_protocols && event.format == 32 {
+                if event.client_data.data32[0] == details.atoms.wm_delete_window {
+                    Some((Event::CloseRequest(CloseReason::SystemMenu), event.window))
+                } else if event.client_data.data32[0] == details.atoms._net_wm_ping {
+                    println!("Got ping");
+                    // data32[2] contains the window xid, that might be useful for something?
+                    event.window = (*details.screen).root;
+                    xcb_discard_reply(details.connection, xcb_send_event_checked(
+                        details.connection,
+                        false.into(),
+                        event.window,
+                        XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT,
+                        (event as *const _) as *const i8,
+                    ));
+                    let _ = xcb_flush(details.connection); // Makes sure the event is processed before we free it
+                    None
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -475,7 +499,7 @@ unsafe fn process_event(atoms: &Atoms, extensions: &Extensions, ev: *mut xcb_gen
         #[cfg(feature = "input")]
         XCB_GE_GENERIC => {
             let event = &*(ev as *mut xcb_ge_generic_event_t);
-            if event.extension == extensions.xinput {
+            if event.extension == details.extensions.xinput {
                 match event.event_type & !(1 << 7) {
                     e @ XCB_INPUT_KEY_PRESS | e @ XCB_INPUT_KEY_RELEASE => {
                         let is_press = e == XCB_INPUT_KEY_PRESS;
@@ -484,7 +508,7 @@ unsafe fn process_event(atoms: &Atoms, extensions: &Extensions, ev: *mut xcb_gen
                             r#type: 2,
                             serial: 0,
                             send_event: 0,
-                            display,
+                            display: details.display,
                             window: 0,
                             root: 0,
                             subwindow: 0,
