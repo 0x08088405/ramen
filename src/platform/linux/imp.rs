@@ -231,7 +231,7 @@ impl Window {
             #[cfg(feature = "input")]
             const EVENT_MASK: u32 = XCB_EVENT_MASK_BUTTON_PRESS;
             #[cfg(not(feature = "input"))]
-            const EVENT_MASK: u32 = 0;
+            const EVENT_MASK: u32 = XCB_EVENT_MASK_FOCUS_CHANGE;
             const VALUE_MASK: u32 = XCB_CW_EVENT_MASK;
             const VALUE_LIST: &[u32] = &[EVENT_MASK];
 
@@ -467,6 +467,10 @@ unsafe fn process_event(atoms: &Atoms, extensions: &Extensions, ev: *mut xcb_gen
             } else {
                 None
             }
+        },
+        e @ XCB_FOCUS_IN | e @ XCB_FOCUS_OUT => {
+            let state = e == XCB_FOCUS_IN;
+            Some((Event::Focus(state), (*(ev as *mut xcb_focus_in_event_t)).event))
         },
         #[cfg(feature = "input")]
         XCB_GE_GENERIC => {

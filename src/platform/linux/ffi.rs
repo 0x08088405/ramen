@@ -106,8 +106,8 @@ pub(super) const XCB_COPY_FROM_PARENT: u8 = 0;
 // pub(super) const XCB_KEY_RELEASE: u8 = 3;
 // pub(super) const XCB_BUTTON_PRESS: u8 = 4;
 // pub(super) const XCB_BUTTON_RELEASE: u8 = 5;
-//pub(super) const XCB_FOCUS_IN: u8 = 9;
-//pub(super) const XCB_FOCUS_OUT: u8 = 10;
+pub(super) const XCB_FOCUS_IN: u8 = 9;
+pub(super) const XCB_FOCUS_OUT: u8 = 10;
 pub(super) const XCB_CLIENT_MESSAGE: u8 = 33;
 #[cfg(feature = "input")]
 pub(super) const XCB_GE_GENERIC: u8 = 35;
@@ -125,6 +125,8 @@ pub(super) const XCB_ATOM_WM_NAME: xcb_atom_t = 39;
 pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
 #[cfg(feature = "input")]
 pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
+#[cfg(not(feature = "input"))]
+pub(super) const XCB_EVENT_MASK_FOCUS_CHANGE: u32 = 2097152;
 
 pub(super) const XCB_NONE: c_int = 0;
 pub(super) const XCB_ALLOC: c_int = 11;
@@ -210,6 +212,16 @@ pub(super) struct xcb_client_message_event_t {
     pub(super) window: xcb_window_t,
     pub(super) r#type: xcb_atom_t,
     pub(super) client_data: ClientData,
+}
+
+#[repr(C)]
+pub(super) struct xcb_focus_in_event_t {
+    pub(super) response_type: u8,
+    pub(super) detail: u8,
+    pub(super) sequence: u16,
+    pub(super) event: xcb_window_t,
+    pub(super) mode: u8,
+    pub(super) _pad0: [u8; 3],
 }
 
 #[repr(C)]
