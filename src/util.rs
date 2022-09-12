@@ -24,18 +24,19 @@ macro_rules! load {
                     static INIT: ::std::sync::Once = ::std::sync::Once::new();
                     static mut LOADED: bool = false;
                     INIT.call_once(|| {
-                        let mut fp = $name.as_mut_ptr() as *mut *mut __anyopaque;
                         let mut handle = ::std::ptr::null_mut();
                         for name in [$(cstr!($so_name)),+] {
                             handle = dlopen(name);
                             if !handle.is_null() { break; }
                         }
                         let _ = dlerror();
+                        let mut fp = $name.as_mut_ptr().cast::<*mut c_void>();
                         if handle.is_null() { return; }
-                        for sym in [$(cstr!(stringify!($fn_name))),+] {
-                            *fp = dlsym(handle, sym).cast();
+                        $($(#[$inner])* {
+                            *fp = dlsym(handle, cstr!(stringify!($fn_name)));
                             fp = fp.offset(1);
-                        }
+                        })*
+                        _ = fp;
                         LOADED = true;
                     });
                     let err_start = dlerror();
