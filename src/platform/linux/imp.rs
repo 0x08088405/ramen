@@ -644,6 +644,7 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
         0xFFE4 => Some(Key::RightControl),
         0xFFE5 => Some(Key::CapsLock),
         0xFFE9 => Some(Key::LeftAlt),
+        0xFFEA => Some(Key::RightAlt),
         0xFFEB => Some(Key::LeftSuper),
         0xFFEC => Some(Key::RightSuper),
         0xFFFF => Some(Key::Delete),
@@ -664,7 +665,7 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
             0xFFB7 => Some(Key::Keypad7),
             0xFFB8 => Some(Key::Keypad8),
             0xFFB9 => Some(Key::Keypad9),
-            _ => { println!("Unmapped key 0x{:X} ^0x{:X}", keysym, keysym2); None },
+            _ => None,
         },
     }
 }
