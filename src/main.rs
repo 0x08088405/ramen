@@ -36,12 +36,15 @@ pub fn f() {
                 Event::Focus(b) => {
                     println!("Window focus state: {}", b);
                 },
+                #[cfg(feature = "input")]
                 Event::KeyboardDown(k) => {
                     println!("Key down: {:?}", k);
                 },
+                #[cfg(feature = "input")]
                 Event::KeyboardRepeat(k) => {
                     println!("Key repeat: {:?}", k);
                 },
+                #[cfg(feature = "input")]
                 Event::KeyboardUp(k) => {
                     println!("Key up: {:?}", k);
                 },

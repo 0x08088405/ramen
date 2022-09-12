@@ -15,6 +15,7 @@ load! {
         fn XOpenDisplay(display_name: *const c_char) -> *mut Display;
         fn XDefaultScreen(display: *mut Display) -> c_int;
         fn XCloseDisplay(display: *mut Display) -> c_int;
+        #[cfg(feature = "input")]
         fn XLookupKeysym(event_struct: *mut XKeyEvent, index: c_int) -> KeySym;
         //fn XLookupString(event_struct: *mut XKeyEvent, buffer_return: *mut c_char, bytes_buffer: c_int, keysym_return: *mut KeySym, status_in_out: *mut c_void) -> c_int;
     }
@@ -26,6 +27,7 @@ load! {
         //fn xcb_connect(displayname: *const c_char, screenp: *mut c_int) -> *mut xcb_connection_t;
         fn xcb_connection_has_error(c: *mut xcb_connection_t) -> c_int;
         //fn xcb_disconnect(c: *mut xcb_connection_t);
+        #[cfg(feature = "input")]
         fn xcb_discard_reply(c: *mut xcb_connection_t, sequence: c_uint);
         fn xcb_get_setup(c: *mut xcb_connection_t) -> *const xcb_setup_t;
         fn xcb_setup_roots_iterator(R: *const xcb_setup_t) -> xcb_screen_iterator_t;
@@ -74,10 +76,14 @@ load! {
         fn xcb_poll_for_event(c: *mut xcb_connection_t) -> *mut xcb_generic_event_t;
         fn xcb_poll_for_queued_event(c: *mut xcb_connection_t) -> *mut xcb_generic_event_t;
         fn xcb_destroy_window(c: *mut xcb_connection_t, xid: xcb_window_t) -> c_uint;
+        #[cfg(feature = "input")]
         fn xcb_query_extension(c: *mut xcb_connection_t, name_len: u16, name: *const c_char) -> c_uint;
+        #[cfg(feature = "input")]
         fn xcb_query_extension_reply(c: *mut xcb_connection_t, sequence: c_uint, e: *mut *mut xcb_generic_error_t) -> *mut xcb_query_extension_reply_t;
     }
+    #[cfg(feature = "input")]
     pub(super) xinput(libxcb_xinput) "libxcb-xinput.so.0", "libxcb-xinput.so" {
+        #[cfg(feature = "input")]
         fn xcb_input_xi_select_events_checked(c: *mut xcb_connection_t, window: xcb_window_t, num_mask: u16, masks: *mut xcb_input_event_mask_t) -> c_uint;
     }
 }
@@ -174,6 +180,7 @@ pub(super) struct xcb_intern_atom_reply_t {
     pub(super) atom: xcb_atom_t,
 }
 
+#[cfg(feature = "input")]
 #[repr(C)]
 pub(super) struct xcb_query_extension_reply_t {
     pub(super) response_type: u8,

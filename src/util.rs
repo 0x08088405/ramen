@@ -5,17 +5,20 @@ macro_rules! cstr {
 }
 
 macro_rules! load {
-    ($($vis:vis $name:ident($type_name:ident) $($so_name:literal),+ {
-        $(fn $fn_name:ident($($arg_name:ident:$arg_ty:ty),+$(,)?) $(-> $ret:ty)?;)+
+    ($($(#[$outer:meta])* $vis:vis $name:ident($type_name:ident) $($so_name:literal),+ {
+        $($(#[$inner:meta])* fn $fn_name:ident($($arg_name:ident:$arg_ty:ty),+$(,)?) $(-> $ret:ty)?;)+
     })+) => {
         pub(self) enum __anyopaque {}
         $(
+            $(#[$outer])*
             #[link_section = ".bss"]
             $vis static mut $name: ::std::mem::MaybeUninit<$type_name> = ::std::mem::MaybeUninit::uninit();
+            $(#[$outer])*
             #[repr(C)]
             $vis struct $type_name {
-                $($fn_name: unsafe extern "system" fn($($arg_ty),+) $(-> $ret)?),+,
+                $($(#[$inner])* $fn_name: unsafe extern "system" fn($($arg_ty),+) $(-> $ret)?),+,
             }
+            $(#[$outer])*
             impl $type_name {
                 $vis unsafe fn load() -> Result<(), crate::error::Error> {
                     static INIT: ::std::sync::Once = ::std::sync::Once::new();
@@ -48,7 +51,7 @@ macro_rules! load {
                     }
                 }
             }
-            $(#[inline(always)] $vis unsafe fn $fn_name($($arg_name:$arg_ty),+) $(-> $ret)? {
+            $($(#[$inner])* #[inline(always)] $vis unsafe fn $fn_name($($arg_name:$arg_ty),+) $(-> $ret)? {
                 ((&*$name.as_ptr()).$fn_name)($($arg_name),+)
             })*
         )*

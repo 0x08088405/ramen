@@ -452,6 +452,11 @@ impl Drop for Window {
 }
 
 unsafe fn process_event(atoms: &Atoms, extensions: &Extensions, ev: *mut xcb_generic_event_t, display: *mut Display) -> Option<(Event, xcb_window_t)> {
+    #[cfg(not(feature = "input"))]
+    {
+        _ = (display, extensions);
+    }
+
     let mapping = match (*ev).response_type & !(1 << 7) {
         XCB_CLIENT_MESSAGE => {
             let event = &*(ev as *mut xcb_client_message_event_t);
