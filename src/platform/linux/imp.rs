@@ -210,7 +210,7 @@ impl Window {
             // Clear the event queue, in case any events remain in it intended for a previous object with this xid we just claimed
             let event = xcb_poll_for_event(c);
             if !event.is_null() {
-                if let Some((event, window)) = process_event(&connection.atoms, &connection.extensions, event) {
+                if let Some((event, window)) = process_event(&connection.atoms, &connection.extensions, event, connection.display) {
                     if let Some(queue) = connection.event_buffer.get_mut(&window) {
                         queue.push(event);
                     }
@@ -218,7 +218,7 @@ impl Window {
             }
             let mut event = xcb_poll_for_queued_event(c);
             while !event.is_null() {
-                if let Some((event, window)) = process_event(&connection.atoms, &connection.extensions, event) {
+                if let Some((event, window)) = process_event(&connection.atoms, &connection.extensions, event, connection.display) {
                     if let Some(queue) = connection.event_buffer.get_mut(&window) {
                         queue.push(event);
                     }
@@ -395,6 +395,7 @@ impl Window {
             // which have been pulled but are not immediately relevant
             let mut connection_ = mutex_lock(&self.connection.0);
             let Connection {
+                display,
                 atoms,
                 extensions,
                 connection: c,
@@ -416,7 +417,7 @@ impl Window {
             // Call `poll_event` once, which populates XCB's internal linked list from the connection
             let event = xcb_poll_for_event(*c);
             if !event.is_null() {
-                if let Some((event, window)) = process_event(atoms, extensions, event) {
+                if let Some((event, window)) = process_event(atoms, extensions, event, *display) {
                     if window == self.handle {
                         self.event_buffer.push(event);
                     } else if let Some(queue) = map.get_mut(&window) {
@@ -426,7 +427,7 @@ impl Window {
             }
             let mut event = xcb_poll_for_queued_event(*c);
             while !event.is_null() {
-                if let Some((event, window)) = process_event(atoms, extensions, event) {
+                if let Some((event, window)) = process_event(atoms, extensions, event, *display) {
                     if window == self.handle {
                         self.event_buffer.push(event);
                     } else if let Some(queue) = map.get_mut(&window) {
@@ -450,7 +451,7 @@ impl Drop for Window {
     }
 }
 
-unsafe fn process_event(atoms: &Atoms, extensions: &Extensions, ev: *mut xcb_generic_event_t) -> Option<(Event, xcb_window_t)> {
+unsafe fn process_event(atoms: &Atoms, extensions: &Extensions, ev: *mut xcb_generic_event_t, display: *mut Display) -> Option<(Event, xcb_window_t)> {
     let mapping = match (*ev).response_type & !(1 << 7) {
         XCB_CLIENT_MESSAGE => {
             let event = &*(ev as *mut xcb_client_message_event_t);
@@ -467,17 +468,36 @@ unsafe fn process_event(atoms: &Atoms, extensions: &Extensions, ev: *mut xcb_gen
             let event = &*(ev as *mut xcb_ge_generic_event_t);
             if event.extension == extensions.xinput {
                 match event.event_type & !(1 << 7) {
-                    XCB_INPUT_KEY_PRESS => {
-                        // TODO: this
-                        let _event = &*(ev as *mut xcb_input_key_press_event_t);
-                        println!("Key press");
-                        None
-                    },
-                    XCB_INPUT_KEY_RELEASE => {
-                        // TODO: this
-                        let _event = &*(ev as *mut xcb_input_key_release_event_t);
-                        println!("Key release");
-                        None
+                    e @ XCB_INPUT_KEY_PRESS | e @ XCB_INPUT_KEY_RELEASE => {
+                        let is_press = e == XCB_INPUT_KEY_PRESS;
+                        let event = &*(ev as *mut xcb_input_key_press_event_t);
+                        let mut xevent = XKeyEvent {
+                            r#type: 2,
+                            serial: 0,
+                            send_event: 0,
+                            display,
+                            window: 0,
+                            root: 0,
+                            subwindow: 0,
+                            time: 0,
+                            x: 0,
+                            y: 0,
+                            x_root: 0,
+                            y_root: 0,
+                            state: event.mods.effective,
+                            keycode: event.detail,
+                            same_screen: 0,
+                        };
+                        let repeat = (event.flags & XCB_INPUT_KEY_EVENT_FLAGS_KEY_REPEAT) != 0;
+                        let f = if is_press {
+                            if repeat { Event::KeyboardRepeat } else { Event::KeyboardDown }
+                        } else {
+                            Event::KeyboardUp
+                        };
+                        keysym_to_key(
+                            XLookupKeysym(&mut xevent, 0),
+                            XLookupKeysym(&mut xevent, 1),
+                        ).map(|x| (f(x), event.event))
                     },
                     XCB_INPUT_BUTTON_PRESS => {
                         // TODO: this
@@ -522,4 +542,124 @@ unsafe fn process_event(atoms: &Atoms, extensions: &Extensions, ev: *mut xcb_gen
     };
     free(ev.cast());
     mapping
+}
+
+#[cfg(feature = "input")]
+use crate::input::Key;
+#[cfg(feature = "input")]
+fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
+    // This function converts a keysym, as returned by XLookupKeysym, to a ramen key.
+    // X does have multiple keysyms per key (for example, XK_A vs XK_a depending if shift is held),
+    // however, XLookupKeysym ignores all modifiers, so this function should only receive "base" keysym values.
+    // To avoid some annoying situations we also request keysym2 which is the key's symbol when holding shift.
+    match keysym {
+        0x2C => Some(Key::OemComma),
+        0x2D => Some(Key::OemMinus),
+        0x2E => Some(Key::OemPeriod),
+        0x30 => Some(Key::Alpha0),
+        0x31 => Some(Key::Alpha1),
+        0x32 => Some(Key::Alpha2),
+        0x33 => Some(Key::Alpha3),
+        0x34 => Some(Key::Alpha4),
+        0x35 => Some(Key::Alpha5),
+        0x36 => Some(Key::Alpha6),
+        0x37 => Some(Key::Alpha7),
+        0x38 => Some(Key::Alpha8),
+        0x39 => Some(Key::Alpha9),
+        0x3D => Some(Key::OemPlus),
+        0x61 => Some(Key::A),
+        0x62 => Some(Key::B),
+        0x63 => Some(Key::C),
+        0x64 => Some(Key::D),
+        0x65 => Some(Key::E),
+        0x66 => Some(Key::F),
+        0x67 => Some(Key::G),
+        0x68 => Some(Key::H),
+        0x69 => Some(Key::I),
+        0x6A => Some(Key::J),
+        0x6B => Some(Key::K),
+        0x6C => Some(Key::L),
+        0x6D => Some(Key::M),
+        0x6E => Some(Key::N),
+        0x6F => Some(Key::O),
+        0x70 => Some(Key::P),
+        0x71 => Some(Key::Q),
+        0x72 => Some(Key::R),
+        0x73 => Some(Key::S),
+        0x74 => Some(Key::T),
+        0x75 => Some(Key::U),
+        0x76 => Some(Key::V),
+        0x77 => Some(Key::W),
+        0x78 => Some(Key::X),
+        0x79 => Some(Key::Y),
+        0x7A => Some(Key::Z),
+        0xFF08 => Some(Key::Backspace),
+        0xFF09 => Some(Key::Tab),
+        0xFF0D => Some(Key::Return),
+        0xFF13 => Some(Key::Pause),
+        0xFF14 => Some(Key::ScrollLock),
+        0xFF1B => Some(Key::Escape),
+        0xFF50 => Some(Key::Home),
+        0xFF51 => Some(Key::LeftArrow),
+        0xFF52 => Some(Key::UpArrow),
+        0xFF53 => Some(Key::RightArrow),
+        0xFF54 => Some(Key::DownArrow),
+        0xFF55 => Some(Key::PageUp),
+        0xFF56 => Some(Key::PageDown),
+        0xFF57 => Some(Key::End),
+        0xFF63 => Some(Key::Insert),
+        0xFF7F => Some(Key::NumLock),
+        0xFFBE => Some(Key::F1),
+        0xFFBF => Some(Key::F2),
+        0xFFC0 => Some(Key::F3),
+        0xFFC1 => Some(Key::F4),
+        0xFFC2 => Some(Key::F5),
+        0xFFC3 => Some(Key::F6),
+        0xFFC4 => Some(Key::F7),
+        0xFFC5 => Some(Key::F8),
+        0xFFC6 => Some(Key::F9),
+        0xFFC7 => Some(Key::F10),
+        0xFFC8 => Some(Key::F11),
+        0xFFC9 => Some(Key::F12),
+        0xFFCA => Some(Key::F13),
+        0xFFCB => Some(Key::F14),
+        0xFFCC => Some(Key::F15),
+        0xFFCD => Some(Key::F16),
+        0xFFCE => Some(Key::F17),
+        0xFFCF => Some(Key::F18),
+        0xFFD0 => Some(Key::F19),
+        0xFFD1 => Some(Key::F20),
+        0xFFD2 => Some(Key::F21),
+        0xFFD3 => Some(Key::F22),
+        0xFFD4 => Some(Key::F23),
+        0xFFD5 => Some(Key::F24),
+        0xFFE1 => Some(Key::LeftShift),
+        0xFFE2 => Some(Key::RightShift),
+        0xFFE3 => Some(Key::LeftControl),
+        0xFFE4 => Some(Key::RightControl),
+        0xFFE5 => Some(Key::CapsLock),
+        0xFFE9 => Some(Key::LeftAlt),
+        0xFFEB => Some(Key::LeftSuper),
+        0xFFEC => Some(Key::RightSuper),
+        0xFFFF => Some(Key::Delete),
+        _ => match keysym2 {
+            0xFFAA => Some(Key::KeypadMultiply),
+            0xFFAB => Some(Key::KeypadAdd),
+            0xFFAC => Some(Key::KeypadSeparator),
+            0xFFAD => Some(Key::KeypadSubtract),
+            0xFFAE => Some(Key::KeypadDecimal),
+            0xFFAF => Some(Key::KeypadDivide),
+            0xFFB0 => Some(Key::Keypad0),
+            0xFFB1 => Some(Key::Keypad1),
+            0xFFB2 => Some(Key::Keypad2),
+            0xFFB3 => Some(Key::Keypad3),
+            0xFFB4 => Some(Key::Keypad4),
+            0xFFB5 => Some(Key::Keypad5),
+            0xFFB6 => Some(Key::Keypad6),
+            0xFFB7 => Some(Key::Keypad7),
+            0xFFB8 => Some(Key::Keypad8),
+            0xFFB9 => Some(Key::Keypad9),
+            _ => { println!("Unmapped key 0x{:X} ^0x{:X}", keysym, keysym2); None },
+        },
+    }
 }

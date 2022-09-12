@@ -15,6 +15,8 @@ load! {
         fn XOpenDisplay(display_name: *const c_char) -> *mut Display;
         fn XDefaultScreen(display: *mut Display) -> c_int;
         fn XCloseDisplay(display: *mut Display) -> c_int;
+        fn XLookupKeysym(event_struct: *mut XKeyEvent, index: c_int) -> KeySym;
+        //fn XLookupString(event_struct: *mut XKeyEvent, buffer_return: *mut c_char, bytes_buffer: c_int, keysym_return: *mut KeySym, status_in_out: *mut c_void) -> c_int;
     }
     pub(super) xlib_xcb(libX11_xcb) "libX11-xcb.so.1", "libX11-xcb.so" {
         fn XGetXCBConnection(dpy: *mut Display) -> *mut xcb_connection_t;
@@ -225,6 +227,7 @@ pub(super) struct xcb_ge_generic_event_t {
 #[cfg(feature = "input")]
 mod input {
     use super::*;
+    pub(in super::super) use libc::c_ulong;
 
     pub(in super::super) type xcb_input_device_id_t = u16;
     pub(in super::super) type xcb_timestamp_t = u32;
@@ -269,6 +272,8 @@ mod input {
     pub(in super::super) const XCB_INPUT_LEAVE: u16 = 8;
     pub(in super::super) const XCB_INPUT_FOCUS_IN: u16 = 9;
     pub(in super::super) const XCB_INPUT_FOCUS_OUT: u16 = 10;
+
+    pub(in super::super) const XCB_INPUT_KEY_EVENT_FLAGS_KEY_REPEAT: u32 = 65536;
 
     pub(in super::super) type xcb_input_fp1616_t = i32;
 
@@ -334,24 +339,44 @@ mod input {
         pub(in super::super) mods: xcb_input_modifier_info_t,
         pub(in super::super) group: xcb_input_group_info_t,
     }
-    pub(in super::super) type xcb_input_key_release_event_t = xcb_input_key_press_event_t;
+    //pub(in super::super) type xcb_input_key_release_event_t = xcb_input_key_press_event_t;
     pub(in super::super) type xcb_input_button_press_event_t = xcb_input_key_press_event_t;
     pub(in super::super) type xcb_input_button_release_event_t = xcb_input_key_press_event_t;
     pub(in super::super) type xcb_input_motion_event_t = xcb_input_key_press_event_t;
 
     #[repr(C)]
     pub(in super::super) struct xcb_input_modifier_info_t {
-        base: u32,
-        latched: u32,
-        locked: u32,
-        effective: u32,
+        pub(in super::super) base: u32,
+        pub(in super::super) latched: u32,
+        pub(in super::super) locked: u32,
+        pub(in super::super) effective: u32,
     }
 
     #[repr(C)]
     pub(in super::super) struct xcb_input_group_info_t {
-        base: u8,
-        latched: u8,
-        locked: u8,
-        effective: u8,
+        pub(in super::super) base: u8,
+        pub(in super::super) latched: u8,
+        pub(in super::super) locked: u8,
+        pub(in super::super) effective: u8,
+    }
+
+    pub(in super::super) type KeySym = c_ulong;
+    #[repr(C)]
+    pub(in super::super) struct XKeyEvent {
+        pub(in super::super) r#type: c_int,
+        pub(in super::super) serial: c_ulong,
+        pub(in super::super) send_event: u8,
+        pub(in super::super) display: *mut Display,
+        pub(in super::super) window: c_ulong,
+        pub(in super::super) root: c_ulong,
+        pub(in super::super) subwindow: c_ulong,
+        pub(in super::super) time: c_ulong,
+        pub(in super::super) x: c_int,
+        pub(in super::super) y: c_int,
+        pub(in super::super) x_root: c_int,
+        pub(in super::super) y_root: c_int,
+        pub(in super::super) state: c_uint,
+        pub(in super::super) keycode: c_uint,
+        pub(in super::super) same_screen: u8,
     }
 }
