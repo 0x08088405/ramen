@@ -473,7 +473,6 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, details: &ConnectionDetail
                 if event.client_data.data32[0] == details.atoms.wm_delete_window {
                     Some((Event::CloseRequest(CloseReason::SystemMenu), event.window))
                 } else if event.client_data.data32[0] == details.atoms._net_wm_ping {
-                    println!("Got ping");
                     // data32[2] contains the window xid, that might be useful for something?
                     event.window = (*details.screen).root;
                     xcb_discard_reply(details.connection, xcb_send_event_checked(
