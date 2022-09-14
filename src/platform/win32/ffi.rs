@@ -119,6 +119,7 @@ pub(crate) const IDC_SIZEWE: *const WCHAR = 32644 as _;
 pub(crate) const IDC_UPARROW: *const WCHAR = 32516 as _;
 pub(crate) const IDC_WAIT: *const WCHAR = 32514 as _;
 pub(crate) const IMAGE_CURSOR: UINT = 2;
+pub(crate) const INFINITE: DWORD = 0xFFFFFFFF;
 pub(crate) const HTCLIENT: LRESULT = 1;
 pub(crate) const LR_DEFAULTSIZE: UINT = 0x00000040;
 pub(crate) const LR_SHARED: UINT = 0x00008000;
@@ -126,6 +127,7 @@ pub(crate) const MF_BYCOMMAND: UINT = 0x00000000;
 pub(crate) const MF_DISABLED: UINT = 0x00000002;
 pub(crate) const MF_ENABLED: UINT = 0x00000000;
 pub(crate) const MF_GRAYED: UINT = 0x00000001;
+pub(crate) const PM_NOREMOVE: UINT = 0;
 pub(crate) const PROCESS_PER_MONITOR_DPI_AWARE: PROCESS_DPI_AWARENESS = 2;
 pub(crate) const PROCESS_SYSTEM_DPI_AWARE: PROCESS_DPI_AWARENESS = 1;
 pub(crate) const SC_CLOSE: WPARAM = 0xF060;
@@ -339,6 +341,7 @@ pub(crate) const WM_SIZE: UINT = 0x0005;
 pub(crate) const WM_ACTIVATE: UINT = 0x0006;
 pub(crate) const WM_SETFOCUS: UINT = 0x0007;
 pub(crate) const WM_KILLFOCUS: UINT = 0x0008;
+pub(crate) const WM_QUIT: UINT = 0x0012;
 pub(crate) const WM_ENABLE: UINT = 0x000A;
 pub(crate) const WM_SETREDRAW: UINT = 0x000B;
 pub(crate) const WM_SETTEXT: UINT = 0x000C;
@@ -401,6 +404,22 @@ pub(crate) const XBUTTON1: WORD = 0x0001;
 pub(crate) const XBUTTON2: WORD = 0x0002;
 
 // Structs
+#[repr(C)]
+pub(crate) struct CREATESTRUCTW {
+    pub(crate) lpCreateParams: *mut c_void,
+    pub(crate) hInstance: HINSTANCE,
+    pub(crate) hMenu: HMENU,
+    pub(crate) hwndParent: HWND,
+    pub(crate) cy: c_int,
+    pub(crate) cx: c_int,
+    pub(crate) y: c_int,
+    pub(crate) x: c_int,
+    pub(crate) style: LONG,
+    pub(crate) lpszName: *const WCHAR,
+    pub(crate) lpszClass: *const WCHAR,
+    pub(crate) dwExStyle: DWORD,
+}
+    
 #[repr(C)]
 pub(crate) struct IMAGE_DOS_HEADER {
     pub(crate) e_magic: WORD,
@@ -496,6 +515,24 @@ extern "system" {
         cchWideChar: c_int,
     ) -> c_int;
 
+    // Threading (because Rust still can't give you thread IDs from a thread handle)
+    pub(crate) fn CreateThread(
+        lpThreadAttributes: *mut c_void,
+        dwStackSize: usize,
+        lpStartAddress: unsafe extern "system" fn(param: *mut c_void) -> DWORD,
+        lpParameter: *mut c_void,
+        dwCreationFlags: DWORD,
+        lpThreadId: *mut DWORD,
+    ) -> HANDLE;
+    pub(crate) fn CreateEventW(
+        lpEventAttributes: *mut c_void,
+        bManualReset: BOOL,
+        bInitialState: BOOL,
+        lpName: *const WCHAR,
+    ) -> HANDLE;
+    pub(crate) fn SetEvent(hEvent: HANDLE) -> BOOL;
+    pub(crate) fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
+
     // Dynamic linking
     pub(crate) fn GetProcAddress(hModule: HMODULE, lpProcName: *const CHAR) -> FARPROC;
     pub(crate) fn LoadLibraryExW(lpLibFileName: *const WCHAR, hFile: HANDLE, dwFlags: DWORD) -> HMODULE;
@@ -553,7 +590,15 @@ extern "system" {
     // Message loop
     pub(crate) fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     pub(crate) fn GetMessageW(lpMsg: *mut MSG, hWnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT) -> BOOL;
+    pub(crate) fn PeekMessageW(
+        lpMsg: *mut MSG, 
+        hWnd: HWND, 
+        wMsgFilterMin: UINT, 
+        wMsgFilterMax: UINT, 
+        wRemoveMsg: UINT,
+    ) -> BOOL;
     pub(crate) fn PostMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
+    pub(crate) fn PostThreadMessageW(idThread: DWORD, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
     pub(crate) fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     pub(crate) fn DispatchMessageW(lpmsg: *const MSG) -> LRESULT;
     pub(crate) fn PostQuitMessage(nExitCode: c_int);

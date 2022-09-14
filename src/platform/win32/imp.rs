@@ -15,25 +15,136 @@ use crate::{
 
 use std::{cell::UnsafeCell, hint, mem, ptr, sync::{atomic::{self, AtomicBool}, Arc}, thread};
 
-static CLASS_REGISTRY_GUARD: Mutex<()> = Mutex::new(());
+/// Custom window message
+const RAMEN_WM_CREATE: UINT = WM_USER + 0;
+const RAMEN_WM_DESTROY: UINT = WM_USER + 1;
+const RAMEN_WM_DROP: UINT = WM_USER + 2;
 
-pub(crate) struct Connection;
+pub(crate) struct Connection {
+    id: DWORD,
+    handle: HANDLE,
+}
+
+unsafe impl Send for Connection {}
+unsafe impl Sync for Connection {}
 
 impl Connection {
     pub(crate) fn new() -> Result<Self, Error> {
-        Ok(Self)
+        unsafe {
+            let event = CreateEventW(ptr::null_mut(), 0, 0, ptr::null());
+            if event.is_null() {
+                return Err(Error::SystemResources);
+            }
+            let mut id: DWORD = 0;
+            let handle = CreateThread(ptr::null_mut(), 0, connection_proc, event as _, 0, &mut id);
+            if handle.is_null() {
+                return Err(Error::SystemResources);
+            }
+            assert!(WaitForSingleObject(event, INFINITE) == 0);
+            Ok(Self { id, handle })
+        }
     }
 }
 
-/// Marker for identifying windows instantiated by ramen.
-/// This is necessary because some software likes to inject windows on your thread that you didn't create.
-/// Identifying a window is done by storing this value in the tail allocation of the window class struct,
-/// which is guaranteed to exist for our windows with `WNDCLASSEXW->cbClsExtra` being exactly usize-sized.
-/// On why it's a `usize` of all things, see the remarks on `set_class_storage`.
-const RAMEN_WINDOW_MARKER: usize = u32::from_le_bytes(*b"viri") as usize;
+impl Drop for Connection {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = PostThreadMessageW(self.id, WM_QUIT, 0, 0);
+            let _ = WaitForSingleObject(self.handle, INFINITE);
+        }
+    }
+}
 
-/// Custom window message
-const RAMEN_WM_DROP: UINT = WM_USER + 0;
+unsafe extern "system" fn connection_proc(fparam: *mut c_void) -> DWORD {
+    'message_loop: loop {
+        let mut msg = mem::MaybeUninit::zeroed();
+
+        // force creating message queue, signal ready (won't consume message)
+        let _ = PeekMessageW(msg.as_mut_ptr(), ptr::null_mut(), 0, 0, PM_NOREMOVE);
+        let _ = SetEvent(fparam as HANDLE);
+
+        let success = GetMessageW(msg.as_mut_ptr(), ptr::null_mut(), 0, 0);
+        if success > 0 && success != -1 {
+            let message = &*msg.as_ptr();
+            if message.hwnd.is_null() {
+                // connection message
+                if message.message == RAMEN_WM_CREATE {
+                    let (cvar, mutex) = &*(message.wParam as *const (Condvar, Mutex<Option<Result<HWND, Error>>>));
+                    let csw = &*(message.lParam as *const CREATESTRUCTW);
+                    let mut reply = sync::mutex_lock(&mutex);
+
+                    static CLASS_REGISTRY_GUARD: Mutex<()> = Mutex::new(());
+                    let mut class = mem::MaybeUninit::<WNDCLASSEXW>::uninit();
+                    let class_ptr = class.as_mut_ptr();
+                    (*class_ptr).cbSize = mem::size_of_val(&class) as UINT;
+                    let class_guard = sync::mutex_lock(&CLASS_REGISTRY_GUARD);
+                    let class_created_here = GetClassInfoExW(base_hinstance(), csw.lpszClass, class_ptr) == 0;
+                    if class_created_here {
+                        // Failure sets a global error code, but we don't care, we know the error
+                        SetLastError(ERROR_SUCCESS);
+
+                        // Fill in the default state and register the class.
+                        let class = &mut *class_ptr;
+                        class.style = CS_OWNDC;
+                        class.lpfnWndProc = window_proc;
+                        class.hIcon = ptr::null_mut();
+                        class.hCursor = ptr::null_mut();
+                        class.hbrBackground = ptr::null_mut();
+                        class.lpszMenuName = ptr::null_mut();
+                        // TODO Filter reserved class names
+                        class.lpszClassName = csw.lpszClass;
+                        class.hIconSm = ptr::null_mut();
+
+                        class.cbClsExtra = mem::size_of::<usize>() as c_int;
+                        class.cbWndExtra = 0;
+
+                        // A handle to the executable base is given so the OS knows how to free it.
+                        class.hInstance = base_hinstance();
+
+                        if RegisterClassExW(class) == 0 {
+                            *reply = Some(Err(Error::SystemResources));
+                            sync::cvar_notify_one(&cvar);
+                            continue 'message_loop;
+                        }
+                    }
+                    mem::drop(class_guard);
+
+                    let hwnd = CreateWindowExW(
+                        csw.dwExStyle,
+                        csw.lpszClass,
+                        csw.lpszName,
+                        csw.style as _,
+                        csw.x,
+                        csw.y,
+                        csw.cx,
+                        csw.cy,
+                        csw.hwndParent,
+                        csw.hMenu,
+                        csw.hInstance,
+                        csw.lpCreateParams,
+                    );
+                    if hwnd.is_null() {
+                        // there's probably many reasons, but...
+                        *reply = Some(Err(Error::SystemResources));
+                        sync::cvar_notify_one(&cvar);
+                        continue 'message_loop;
+                    }
+                    *reply = Some(Ok(hwnd));
+                    sync::cvar_notify_one(&cvar);
+                }
+            } else {
+                // window message
+                let _ = DispatchMessageW(msg.as_ptr());
+            }
+        } else if success == 0 {
+            break 'message_loop;
+        } else {
+            // TODO: poison connection
+            panic!("oh no");
+        }
+    }
+    0
+}
 
 /// Retrieves the base module [`HINSTANCE`].
 #[inline]
@@ -134,10 +245,9 @@ unsafe fn set_close_button(hwnd: HWND, enabled: bool) {
 }
 
 pub(crate) struct Window {
-    _connection: connection::Connection,
+    connection: connection::Connection,
     hwnd: HWND,
-    state: *mut WindowState, // 'thread, volatile
-    thread: Option<thread::JoinHandle<()>>,
+    state: Box<UnsafeCell<WindowState>>,
 }
 unsafe impl Send for Window {}
 unsafe impl Sync for Window {}
@@ -150,176 +260,68 @@ struct WindowCreateParams {
 /// Volatile state which the `Window` and its thread both have a pointer to.
 struct WindowState {
     close_reason: Option<CloseReason>,
-    destroy: AtomicBool, // see remarks on `cbt_hookproc`, `WM_DESTROY`
     event_backbuf: Vec<Event>,
     event_frontbuf: Vec<Event>,
-    event_sync: (Condvar, Mutex<bool>), // bool is "is_blocking", see `WindowState::dispatch_event`
-    qpc_counts_per_sec: u64,
-    qpc_countdown: u64,
-    qpc_previous: u64,
+    event_sync: Mutex<()>,
 }
 
 unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
-    // A window class describes the default state of a window, more or less.
-    // It needs to be registered to the system-global table if it has not been.
-    let mut class = mem::MaybeUninit::<WNDCLASSEXW>::uninit();
-    let class_ptr = class.as_mut_ptr();
-    (*class_ptr).cbSize = mem::size_of_val(&class) as UINT;
-
-    // The most convenient way to identify a window class is by its name.
-    // There is a handle system (ATOMs), but you can't do a reverse lookup with the string.
-    // For more info, read up on Windows's Atom Tables. Class names are in the User Atom Table.
     let mut class_name_wstr = Vec::<WCHAR>::new();
     let class_name = str_to_wstr(&*builder.class_name, class_name_wstr.as_mut())
         .ok_or(Error::OutOfMemory)?;
-        
-    // Check if it's been registered by trying to query information about the class.
-    // If it hasn't been, fill in the info and register it.
-    let class_guard = sync::mutex_lock(&CLASS_REGISTRY_GUARD);
-    let class_created_here = GetClassInfoExW(base_hinstance(), class_name, class_ptr) == 0;
-    if class_created_here {
-        // Failure sets a global error code, but we don't care, we know the error
-        SetLastError(ERROR_SUCCESS);
-
-        // Fill in the default state and register the class.
-        let class = &mut *class_ptr;
-        class.style = CS_OWNDC;
-        class.lpfnWndProc = window_proc;
-        class.hIcon = ptr::null_mut();
-        class.hCursor = ptr::null_mut();
-        class.hbrBackground = ptr::null_mut();
-        class.lpszMenuName = ptr::null_mut();
-        // TODO Filter reserved class names
-        class.lpszClassName = class_name;
-        class.hIconSm = ptr::null_mut();
-
-        // See the remarks on `RAMEN_WINDOW_MARKER`
-        class.cbClsExtra = mem::size_of::<usize>() as c_int;
-        class.cbWndExtra = 0;
-
-        // A handle to the executable base is given so the OS knows when to free it (if you do not).
-        class.hInstance = base_hinstance();
-
-        // Unlike what most libraries think, this is fallible, even if the input is valid.
-        // It's quite trivial to fill up the (system-global) User Atom Table (2^16-1 entries) and OOM.
-        if RegisterClassExW(class) == 0 {
-            return Err(Error::SystemResources);
-        }
-    }
-    mem::drop(class_guard);
 
     let mut title_wstr = Vec::new();
-    let _ = str_to_wstr(&*builder.title, &mut title_wstr).ok_or(Error::OutOfMemory)?;
+    let title_name = str_to_wstr(&*builder.title, &mut title_wstr).ok_or(Error::OutOfMemory)?;
 
     let style = builder.style;
+    let (dw_style, dw_style_ex) = style_to_bits(&style);
+    let window_state = Box::new(UnsafeCell::new(WindowState {
+        close_reason: None,
+        event_backbuf: Vec::new(),
+        event_frontbuf: Vec::new(),
+        event_sync: Mutex::new(()),
+    }));
 
-    // Mechanism thingy
-    let recv = Arc::new((Condvar::new(), Mutex::new(None)));
-    let send = Arc::clone(&recv);
+    let create_params = WindowCreateParams {
+        state: window_state.get(),
+    };
 
-    // Time to create the window thread!
-    let thread = thread::Builder::new().spawn(move || {
-        let class_name = class_name_wstr;
-        let send = send;
-        let style = style;
-        let title = title_wstr;
-
-        // Attach the CBT hook for the current thread
-        let thread_id = GetCurrentThreadId();
-        let cbt_hook = SetWindowsHookExW(WH_CBT, cbt_hookproc, ptr::null_mut(), thread_id);
-        assert!(!cbt_hook.is_null()); // TODO
-
-        let (dw_style, dw_style_ex) = style_to_bits(&style);
-
-        let mut qpc_counts_per_sec = 0;
-        let _ = QueryPerformanceFrequency(&mut qpc_counts_per_sec);
-        let mut qpc_previous = 0;
-        let _ = QueryPerformanceCounter(&mut qpc_previous);
-        let window_state = UnsafeCell::new(WindowState {
-            close_reason: None,
-            destroy: AtomicBool::new(false),
-            event_backbuf: Vec::new(),
-            event_frontbuf: Vec::new(),
-            event_sync: (Condvar::new(), Mutex::new(false)),
-            qpc_counts_per_sec,
-            qpc_countdown: qpc_counts_per_sec,
-            qpc_previous,
-        });
-
-        let create_params = WindowCreateParams {
-            state: window_state.get(),
+    let hwnd = {
+        let csw = CREATESTRUCTW {
+            lpCreateParams: (&create_params) as *const WindowCreateParams as *mut c_void,
+            hInstance: base_hinstance(),
+            hMenu: ptr::null_mut(),
+            hwndParent: ptr::null_mut(),
+            x: 400,
+            y: 400,
+            cx: 800,
+            cy: 608,
+            style: dw_style as _,
+            lpszName: title_name,
+            lpszClass: class_name,
+            dwExStyle: dw_style_ex,
         };
-
-        let hwnd = CreateWindowExW(
-            dw_style_ex,
-            if class_name.is_empty() { [0].as_ptr() } else { class_name.as_ptr() },
-            if title.is_empty() { [0].as_ptr() } else { title.as_ptr() },
-            dw_style,
-            400, // x
-            400, // y
-            800, // w (nc)
-            608, // h (nc)
-            ptr::null_mut(),
-            ptr::null_mut(),
-            base_hinstance(),
-            (&create_params) as *const WindowCreateParams as *mut c_void,
-        );
-        assert!(!hwnd.is_null());
-        // TODO handle this ^
-
-        if class_created_here {
-            // the old value is returned, we can ignore this
-            let _ = set_class_storage(hwnd, 0, RAMEN_WINDOW_MARKER);
-        }
-
-        let (cvar, mutex) = &*send;
+        let response = (Condvar::new(), Mutex::<Option<Result<HWND, Error>>>::new(None));
+        let mut conn = sync::mutex_lock(&builder.connection.0);
+        let res = PostThreadMessageW(conn.id, RAMEN_WM_CREATE, &response as *const _ as _, &csw as *const _ as _);
+        let (cvar, mutex) = &response;
         let mut lock = sync::mutex_lock(mutex);
-        *lock = Some(Ok(Window {
-            _connection: builder.connection,
-            hwnd,
-            state: window_state.get(),
-            thread: None,
-        }));
-        sync::cvar_notify_one(cvar);
-        mem::drop(lock);
-
-        // This is considered a menu item, so it has to be updated after creating the window.
-        set_close_button(hwnd, style.controls.as_ref().map(|x| x.close).unwrap_or(false));
-
-        // Run message loop until error or exit
-        let mut msg = mem::MaybeUninit::zeroed();
-        'message_loop: loop {
-            // `HWND hWnd` is set to NULL here to query all messages on the thread,
-            // as the exit condition/signal `WM_QUIT` is not associated with any window.
-            // This is one of the main motives (besides no blocking) to give each window a thread.
-            match GetMessageW(msg.as_mut_ptr(), ptr::null_mut(), 0, 0) {
-                -1 => panic!("Hard error {:#06X} in GetMessageW loop!", GetLastError()),
-                0 => break 'message_loop,
-                _ => {
-                    // Dispatch message to `window_proc`
-                    // NOTE: Some events call `window_proc` directly instead of through here
-                    let _ = DispatchMessageW(msg.as_ptr());
-                },
+        'reply: loop {
+            if let Some(result) = (&mut *lock).take() {
+                break 'reply result;
+            } else {
+                sync::cvar_wait(cvar, &mut lock);
             }
         }
+    }?;
 
-        mem::drop(window_state);
-        let _ = UnhookWindowsHookEx(cbt_hook);
-    }).map_err(|_| Error::SystemResources)?;
+    set_close_button(hwnd, style.controls.as_ref().map(|x| x.close).unwrap_or(false));
 
-    // wait until thread gives us a result, yield value
-    let (cvar, mutex) = &*recv;
-    let mut lock = sync::mutex_lock(mutex);
-    loop {
-        if let Some(result) = (&mut *lock).take() {
-            break result.map(|mut window| {
-                window.thread = Some(thread);
-                window
-            })
-        } else {
-            sync::cvar_wait(cvar, &mut lock);
-        }
-    }
+    Ok(Window {
+        connection: builder.connection,
+        hwnd,
+        state: window_state,
+    })
 }
 
 impl Window {
@@ -330,58 +332,25 @@ impl Window {
     pub(crate) fn events(&self) -> &[Event] {
         unsafe {
             // safety: `poll_events`'s signature invalidates this reference
-            (*self.state).event_frontbuf.as_slice()
+            (&*self.state.get()).event_frontbuf.as_slice()
         }
     }
 
     pub(crate) fn poll_events(&mut self) {
         unsafe {
-            let state = &mut *self.state;
-            let (cvar, mutex) = &state.event_sync;
-            let mut is_blocking = sync::mutex_lock(mutex);
-            if *is_blocking {
-                *is_blocking = false;
-                sync::cvar_notify_one(cvar);
-            }
-
-            let mut qpc_counter = 0;
-            let _ = QueryPerformanceCounter(&mut qpc_counter);
-            state.qpc_countdown = state.qpc_counts_per_sec;
-            state.qpc_previous = qpc_counter;
-
+            let state = &mut *self.state.get();
+            let guard = sync::mutex_lock(&state.event_sync);
             state.event_frontbuf.clear();
             mem::swap(&mut state.event_frontbuf, &mut state.event_backbuf);
-            mem::drop(is_blocking);
         }
     }
 }
 
 impl WindowState {
     fn dispatch_event(&mut self, event: Event) {
-        let (cvar, mutex) = &self.event_sync;
-        let mut is_blocking = sync::mutex_lock(mutex);
-        let mut qpc_counter = 0;
-        let _ = unsafe { QueryPerformanceCounter(&mut qpc_counter) };
-        let qpc_difference = qpc_counter - self.qpc_previous;
-        self.qpc_previous = qpc_counter;
-        let timed_out = self.qpc_countdown < qpc_difference;
-        if !timed_out {
-            self.qpc_countdown -= qpc_difference;
-        }
-        loop {
-            if *is_blocking || timed_out || self.event_backbuf._try_push(event).is_err() {
-                *is_blocking = true;
-                sync::cvar_wait(cvar, &mut is_blocking);
-            } else {
-                break
-            }
-        }
+        let guard = sync::mutex_lock(&self.event_sync);
+        self.event_backbuf.push(event);
     }
-}
-
-/// See remarks on `RAMEN_WINDOW_MARKER`.
-unsafe fn is_ramen_window(hwnd: HWND) -> bool {
-    class_storage(hwnd, GCL_CBCLSEXTRA) == mem::size_of::<usize>() && class_storage(hwnd, 0) == RAMEN_WINDOW_MARKER
 }
 
 /// Returns a pointer to the `WindowState` for a ramen window.
@@ -685,24 +654,6 @@ fn translate_vk(wparam: WPARAM) -> Option<Key> {
     }
 }
 
-/// Hook procedure for managing things that other bits of Win32 simply don't provide a way to do
-unsafe extern "system" fn cbt_hookproc(code: c_int, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    match code {
-        // We need to uphold the invariant that as long as there's a `Window` there really is one.
-        // There's no other way to say no to `DestroyWindow` calls than a CBT hook like this.
-        HCBT_DESTROYWND => {
-            let hwnd = wparam as HWND;
-            if is_ramen_window(hwnd) {
-                // 0 - allow, 1 - forbid (hence !)
-                (!(*user_state(hwnd)).destroy.load(atomic::Ordering::Acquire)) as LRESULT
-            } else {
-                CallNextHookEx(ptr::null_mut(), code, wparam, lparam)
-            }
-        },
-        _ => CallNextHookEx(ptr::null_mut(), code, wparam, lparam),
-    }
-}
-
 pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
    // println!("WindowProc ({:p}, {:#X}, {:#X} {:#X})", hwnd, msg, wparam, lparam);
     // Fantastic resource for a comprehensive list of window messages:
@@ -722,15 +673,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
         // Received as the client area is being destroyed.
         // This event is received, then `WM_NCDESTROY`, and the window is gone after that.
         // Nothing can actually be done once this message is received, and you always return 0.
-        WM_DESTROY => {
-            // However, to uphold the invariant that as long as there's a `Window` there really is one,
-            // we make sure this message was received due to the window being dropped,
-            // and not from a silly third party program sneaking a message in there.
-            if (*user_state(hwnd)).destroy.load(atomic::Ordering::Acquire) {
-                PostQuitMessage(0);
-            }
-            0
-        },
+        WM_DESTROY => 0,
 
         // TODO
         WM_MOVE => DefWindowProcW(hwnd, msg, wparam, lparam),
@@ -880,19 +823,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
 impl Drop for Window {
     fn drop(&mut self) {
         unsafe {
-            let state = &*user_state(self.hwnd);
-            state.destroy.store(true, atomic::Ordering::Release);
             let _ = PostMessageW(self.hwnd, RAMEN_WM_DROP, 0, 0);
-            if let Some(result) = self.thread.take().map(thread::JoinHandle::join) {
-                if let Err(_err) = result {
-                    // TODO: Not sure what to do here, honestly.
-                    // Like it shouldn't panic, but what about GetMessageW?
-                    // I guess remove that panic. It shouldn't fail, no?
-                    panic!("window thread panicked");
-                }
-            } else {
-                hint::unreachable_unchecked()
-            }
         }
     }
 }
