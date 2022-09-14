@@ -27,7 +27,8 @@ pub(crate) use std::os::raw::{
     c_ushort, c_short,
     c_uint, c_int,
     c_ulong, c_long,
-    c_ulonglong, c_longlong,
+    c_ulonglong,
+    //c_longlong,
 };
 pub(crate) type wchar_t = u16;
 

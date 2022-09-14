@@ -9,16 +9,15 @@ use crate::{
     error::Error,
     event::{CloseReason, Event},
     input::Key,
-    util::{TryPush, sync::{self, Condvar, Mutex}},
+    util::{sync::{self, Condvar, Mutex}},
     window,
 };
 
-use std::{cell::UnsafeCell, hint, mem, ptr, sync::{atomic::{self, AtomicBool}, Arc}, thread};
+use std::{cell::UnsafeCell, mem, ptr};
 
 /// Custom window message
 const RAMEN_WM_CREATE: UINT = WM_USER + 0;
-const RAMEN_WM_DESTROY: UINT = WM_USER + 1;
-const RAMEN_WM_DROP: UINT = WM_USER + 2;
+const RAMEN_WM_DROP: UINT = WM_USER + 1;
 
 pub(crate) struct Connection {
     id: DWORD,
@@ -245,7 +244,7 @@ unsafe fn set_close_button(hwnd: HWND, enabled: bool) {
 }
 
 pub(crate) struct Window {
-    connection: connection::Connection,
+    _connection: connection::Connection,
     hwnd: HWND,
     state: Box<UnsafeCell<WindowState>>,
 }
@@ -302,8 +301,8 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
             dwExStyle: dw_style_ex,
         };
         let response = (Condvar::new(), Mutex::<Option<Result<HWND, Error>>>::new(None));
-        let mut conn = sync::mutex_lock(&builder.connection.0);
-        let res = PostThreadMessageW(conn.id, RAMEN_WM_CREATE, &response as *const _ as _, &csw as *const _ as _);
+        let conn = sync::mutex_lock(&builder.connection.0);
+        let _ = PostThreadMessageW(conn.id, RAMEN_WM_CREATE, &response as *const _ as _, &csw as *const _ as _);
         let (cvar, mutex) = &response;
         let mut lock = sync::mutex_lock(mutex);
         'reply: loop {
@@ -318,7 +317,7 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
     set_close_button(hwnd, style.controls.as_ref().map(|x| x.close).unwrap_or(false));
 
     Ok(Window {
-        connection: builder.connection,
+        _connection: builder.connection,
         hwnd,
         state: window_state,
     })
@@ -342,6 +341,7 @@ impl Window {
             let guard = sync::mutex_lock(&state.event_sync);
             state.event_frontbuf.clear();
             mem::swap(&mut state.event_frontbuf, &mut state.event_backbuf);
+            mem::drop(guard);
         }
     }
 }
@@ -350,6 +350,7 @@ impl WindowState {
     fn dispatch_event(&mut self, event: Event) {
         let guard = sync::mutex_lock(&self.event_sync);
         self.event_backbuf.push(event);
+        mem::drop(guard);
     }
 }
 
