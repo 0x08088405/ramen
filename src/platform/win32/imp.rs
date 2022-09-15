@@ -8,10 +8,12 @@ use crate::{
     connection,
     error::Error,
     event::{CloseReason, Event},
-    input::Key,
     util::{sync::{self, Condvar, Mutex}},
     window,
 };
+
+#[cfg(feature = "input")]
+use crate::input::{Key, MouseButton};
 
 use std::{cell::UnsafeCell, mem, ptr};
 
@@ -808,6 +810,55 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
                 (*user_state(hwnd)).close_reason = Some(CloseReason::SystemMenu);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
+        },
+
+        WM_LBUTTONDOWN => {
+            #[cfg(feature = "input")]
+            {
+                let state = &mut *user_state(hwnd);
+                state.dispatch_event(Event::MouseDown(MouseButton::Left));
+            }
+            0
+        },
+        WM_RBUTTONDOWN => {
+            #[cfg(feature = "input")]
+            {
+                let state = &mut *user_state(hwnd);
+                state.dispatch_event(Event::MouseDown(MouseButton::Right));
+            }
+            0
+        },
+        WM_MBUTTONDOWN => {
+            #[cfg(feature = "input")]
+            {
+                let state = &mut *user_state(hwnd);
+                state.dispatch_event(Event::MouseDown(MouseButton::Middle));
+            }
+            0
+        },
+        WM_LBUTTONUP => {
+            #[cfg(feature = "input")]
+            {
+                let state = &mut *user_state(hwnd);
+                state.dispatch_event(Event::MouseUp(MouseButton::Left));
+            }
+            0
+        },
+        WM_RBUTTONUP => {
+            #[cfg(feature = "input")]
+            {
+                let state = &mut *user_state(hwnd);
+                state.dispatch_event(Event::MouseUp(MouseButton::Right));
+            }
+            0
+        },
+        WM_MBUTTONUP => {
+            #[cfg(feature = "input")]
+            {
+                let state = &mut *user_state(hwnd);
+                state.dispatch_event(Event::MouseUp(MouseButton::Middle));
+            }
+            0
         },
 
         // Custom message: The "real" destroy signal that won't be rejected.
