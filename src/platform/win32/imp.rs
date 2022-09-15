@@ -40,6 +40,7 @@ impl Connection {
                 return Err(Error::SystemResources);
             }
             assert!(WaitForSingleObject(event, INFINITE) == 0);
+            let _ = CloseHandle(event);
             Ok(Self { id, handle })
         }
     }
@@ -55,13 +56,13 @@ impl Drop for Connection {
 }
 
 unsafe extern "system" fn connection_proc(fparam: *mut c_void) -> DWORD {
+    let mut msg = mem::MaybeUninit::zeroed();
+
+    // force creating message queue, signal ready (won't consume message)
+    let _ = PeekMessageW(msg.as_mut_ptr(), ptr::null_mut(), 0, 0, PM_NOREMOVE);
+    let _ = SetEvent(fparam as HANDLE);
+
     'message_loop: loop {
-        let mut msg = mem::MaybeUninit::zeroed();
-
-        // force creating message queue, signal ready (won't consume message)
-        let _ = PeekMessageW(msg.as_mut_ptr(), ptr::null_mut(), 0, 0, PM_NOREMOVE);
-        let _ = SetEvent(fparam as HANDLE);
-
         let success = GetMessageW(msg.as_mut_ptr(), ptr::null_mut(), 0, 0);
         if success > 0 && success != -1 {
             let message = &*msg.as_ptr();

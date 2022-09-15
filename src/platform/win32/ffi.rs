@@ -531,6 +531,7 @@ extern "system" {
         bInitialState: BOOL,
         lpName: *const WCHAR,
     ) -> HANDLE;
+    pub(crate) fn CloseHandle(handle: HANDLE) -> BOOL;
     pub(crate) fn SetEvent(hEvent: HANDLE) -> BOOL;
     pub(crate) fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
 
