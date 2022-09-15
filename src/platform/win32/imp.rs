@@ -685,7 +685,13 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
         // << Event 0x0004 is not known to exist. >>
 
         // TODO
-        WM_SIZE => DefWindowProcW(hwnd, msg, wparam, lparam),
+        WM_SIZE => {
+            let w = lparam & 0xFFFF;
+            let h = (lparam >> 16) & 0xFFFF;
+            let state = &mut *user_state(hwnd);
+            state.dispatch_event(Event::Resize((w as _, h as _)));
+            0
+        },
 
         // Received when the window is activated or deactivated (focus gain/loss). Return 0.
         // wParam: HIWORD = non-zero if minimized, LOWORD = WA_ACTIVE | WA_CLICKACTIVE | WA_INACTIVE
