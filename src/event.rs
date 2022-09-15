@@ -1,5 +1,5 @@
 #[cfg(feature = "input")]
-use crate::input::Key;
+use crate::input::{Key, MouseButton};
 
 #[derive(Copy, Clone, Debug, Hash, PartialEq)]
 #[non_exhaustive]
@@ -25,6 +25,14 @@ pub enum Event {
     #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
     #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
     KeyboardUp(Key),
+
+    #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
+    MouseDown(MouseButton),
+
+    #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
+    MouseUp(MouseButton),
 }
 
 /// Details the source of [`Event::CloseRequest`].

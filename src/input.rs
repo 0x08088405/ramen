@@ -110,3 +110,10 @@ pub enum Key {
     LaunchMediaSelect,
     Play,
 }
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub enum MouseButton {
+    Left,
+    Middle,
+    Right,
+}

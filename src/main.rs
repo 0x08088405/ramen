@@ -48,6 +48,14 @@ pub fn f() {
                 Event::KeyboardUp(k) => {
                     println!("Key up: {:?}", k);
                 },
+                #[cfg(feature = "input")]
+                Event::MouseDown(k) => {
+                    println!("Mouse down: {:?}", k);
+                },
+                #[cfg(feature = "input")]
+                Event::MouseUp(k) => {
+                    println!("Mouse up: {:?}", k);
+                },
                 _ => (),
             }
         }
