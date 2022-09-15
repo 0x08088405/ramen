@@ -56,6 +56,10 @@ pub fn f() {
                 Event::MouseUp(k) => {
                     println!("Mouse up: {:?}", k);
                 },
+                #[cfg(feature = "input")]
+                Event::MouseMove(t) => {
+                    println!("Mouse move: {:?}", t);
+                },
                 _ => (),
             }
         }

@@ -33,6 +33,10 @@ pub enum Event {
     #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
     #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
     MouseUp(MouseButton),
+
+    #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
+    MouseMove((u16, u16)),
 }
 
 /// Details the source of [`Event::CloseRequest`].
