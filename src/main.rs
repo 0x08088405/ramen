@@ -36,6 +36,9 @@ pub fn f() {
                 Event::Focus(b) => {
                     println!("Window focus state: {}", b);
                 },
+                Event::Resize(t) => {
+                    println!("Window resize: {:?}", t);
+                },
                 #[cfg(feature = "input")]
                 Event::KeyboardDown(k) => {
                     println!("Key down: {:?}", k);

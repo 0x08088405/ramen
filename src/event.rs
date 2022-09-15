@@ -11,6 +11,8 @@ pub enum Event {
     /// The window focus state has been updated (`true` if focused).
     Focus(bool),
 
+    Resize((u16, u16)),
+
     /// A [`Key`] was pressed.
     #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
     #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
