@@ -812,6 +812,17 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             DefWindowProcW(hwnd, msg, wparam, lparam)
         },
 
+        WM_MOUSEMOVE => {
+            #[cfg(feature = "input")]
+            {
+                let state = &mut *user_state(hwnd);
+                let x = lparam & 0xFFFF;
+                let y = (lparam >> 16) & 0xFFFF;
+                state.dispatch_event(Event::MouseMove((x as _, y as _)));
+            }
+            0
+        },
+
         WM_LBUTTONDOWN => {
             #[cfg(feature = "input")]
             {
