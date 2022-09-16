@@ -108,6 +108,7 @@ pub(super) const XCB_COPY_FROM_PARENT: u8 = 0;
 // pub(super) const XCB_BUTTON_RELEASE: u8 = 5;
 pub(super) const XCB_FOCUS_IN: u8 = 9;
 pub(super) const XCB_FOCUS_OUT: u8 = 10;
+pub(super) const XCB_CONFIGURE_NOTIFY: u8 = 22;
 pub(super) const XCB_CLIENT_MESSAGE: u8 = 33;
 #[cfg(feature = "input")]
 pub(super) const XCB_GE_GENERIC: u8 = 35;
@@ -224,6 +225,23 @@ pub(super) struct xcb_focus_in_event_t {
     pub(super) event: xcb_window_t,
     pub(super) mode: u8,
     pub(super) _pad0: [u8; 3],
+}
+
+#[repr(C)]
+pub(super) struct xcb_configure_notify_event_t {
+    pub(super) response_type: u8,
+    pub(super) _pad0: u8,
+    pub(super) sequence: u16,
+    pub(super) event: xcb_window_t,
+    pub(super) window: xcb_window_t,
+    pub(super) above_sibling: xcb_window_t,
+    pub(super) x: i16,
+    pub(super) y: i16,
+    pub(super) width: u16,
+    pub(super) height: u16,
+    pub(super) border_width: u16,
+    pub(super) override_redirect: u8,
+    pub(super) _pad1: u8,
 }
 
 #[repr(C)]

@@ -206,6 +206,8 @@ pub(crate) struct Window {
 pub(crate) struct WindowDetails {
     handle: xcb_window_t,
     event_buffer: Vec<Event>,
+    position: (i16, i16),
+    size: (u16, u16),
 }
 
 impl Window {
@@ -215,6 +217,10 @@ impl Window {
             let connection: &mut Connection = &mut *connection_mtx;
             let c = connection.details.connection;
             let hostname = connection.hostname.as_ref();
+
+            // TODO: copy these from the builder when they're in there
+            let (x, y) = (0, 0);
+            let (width, height) = (800, 608);
 
             // Generate an ID for our new window
             let xid = xcb_generate_id(c);
@@ -246,9 +252,9 @@ impl Window {
             // Create the new X window
             // ButtonPress is exclusive, so we request it in CreateWindow to make sure we get it first
             #[cfg(feature = "input")]
-            const EVENT_MASK: u32 = XCB_EVENT_MASK_BUTTON_PRESS;
+            const EVENT_MASK: u32 = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_STRUCTURE_NOTIFY;
             #[cfg(not(feature = "input"))]
-            const EVENT_MASK: u32 = XCB_EVENT_MASK_FOCUS_CHANGE;
+            const EVENT_MASK: u32 = XCB_EVENT_MASK_FOCUS_CHANGE | XCB_EVENT_MASK_STRUCTURE_NOTIFY;
             const VALUE_MASK: u32 = XCB_CW_EVENT_MASK;
             const VALUE_LIST: &[u32] = &[EVENT_MASK];
 
@@ -257,10 +263,10 @@ impl Window {
                 XCB_COPY_FROM_PARENT,
                 xid,
                 (*connection.details.screen).root, // idk
-                0,
-                0,
-                800,
-                608,
+                x,
+                y,
+                width,
+                height,
                 0,
                 XCB_WINDOW_CLASS_INPUT_OUTPUT,
                 XCB_COPY_FROM_PARENT.into(),
@@ -403,6 +409,8 @@ impl Window {
                 details: WindowDetails {
                     handle: xid,
                     event_buffer: Vec::with_capacity(QUEUE_SIZE),
+                    position: (x, y),
+                    size: (width, height),
                 },
             })
         }
@@ -484,6 +492,7 @@ unsafe fn get_event_window(ev: *mut xcb_generic_event_t, details: &ConnectionDet
     match (*ev).response_type & !(1 << 7) {
         XCB_CLIENT_MESSAGE => Some((*(ev as *mut xcb_client_message_event_t)).window),
         XCB_FOCUS_IN | XCB_FOCUS_OUT => Some((*(ev as *mut xcb_focus_in_event_t)).event),
+        XCB_CONFIGURE_NOTIFY => Some((*(ev as *mut xcb_configure_notify_event_t)).window),
         #[cfg(feature = "input")]
         XCB_GE_GENERIC => {
             let event = &*(ev as *mut xcb_ge_generic_event_t);
@@ -528,6 +537,19 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
         e @ XCB_FOCUS_IN | e @ XCB_FOCUS_OUT => {
             let state = e == XCB_FOCUS_IN;
             window.event_buffer.push(Event::Focus(state));
+        },
+        XCB_CONFIGURE_NOTIFY => {
+            let event = &*(ev as *mut xcb_configure_notify_event_t);
+            let xy = (event.x, event.y);
+            let wh = (event.width, event.height);
+            if window.position != xy {
+                window.position = xy;
+                // Put a movement event here?
+            }
+            if window.size != wh {
+                window.size = wh;
+                window.event_buffer.push(Event::Resize(wh));
+            }
         },
         #[cfg(feature = "input")]
         XCB_GE_GENERIC => {
