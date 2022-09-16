@@ -649,6 +649,7 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
     // X does have multiple keysyms per key (for example, XK_A vs XK_a depending if shift is held),
     // however, XLookupKeysym ignores all modifiers, so this function should only receive "base" keysym values.
     // To avoid some annoying situations we also request keysym2 which is the modified keysym.
+    // Values mostly copied from <X11/keysymdef.h>
     match keysym {
         0x2C => Some(Key::OemComma),
         0x2D => Some(Key::OemMinus),
@@ -704,6 +705,7 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
         0xFF55 => Some(Key::PageUp),
         0xFF56 => Some(Key::PageDown),
         0xFF57 => Some(Key::End),
+        0xFF58 => Some(Key::Home), // From numpad keysym names I'm pretty confident Begin and Home mean the same thing
         0xFF63 => Some(Key::Insert),
         0xFF7F => Some(Key::NumLock),
         0xFFBE => Some(Key::F1),
@@ -740,7 +742,27 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
         0xFFEB => Some(Key::LeftSuper),
         0xFFEC => Some(Key::RightSuper),
         0xFFFF => Some(Key::Delete),
-        _ => match keysym2 {
+        (0xFF80..=0xFFB9) => match keysym2 {
+            // We use the modified keysym for numpad keys because modifiers actually change our mapping rules
+            // eg: numpad "0" maps to either `Keypad0` or `Insert` depending on the states of shift and numlock
+            0xFF80 => Some(Key::Space),
+            0xFF89 => Some(Key::Tab),
+            0xFF8D => Some(Key::Return),
+            0xFF91 => Some(Key::F1),
+            0xFF92 => Some(Key::F2),
+            0xFF93 => Some(Key::F3),
+            0xFF94 => Some(Key::F4),
+            0xFF95 => Some(Key::Home),
+            0xFF96 => Some(Key::LeftArrow),
+            0xFF97 => Some(Key::UpArrow),
+            0xFF98 => Some(Key::RightArrow),
+            0xFF99 => Some(Key::DownArrow),
+            0xFF9A => Some(Key::PageUp),
+            0xFF9B => Some(Key::PageDown),
+            0xFF9C => Some(Key::End),
+            0xFF9D => Some(Key::Home),
+            0xFF9E => Some(Key::Insert),
+            0xFF9F => Some(Key::Delete),
             0xFFAA => Some(Key::KeypadMultiply),
             0xFFAB => Some(Key::KeypadAdd),
             0xFFAC => Some(Key::KeypadSeparator),
@@ -759,5 +781,6 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
             0xFFB9 => Some(Key::Keypad9),
             _ => None,
         },
+        _ => None,
     }
 }
