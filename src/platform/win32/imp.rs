@@ -834,7 +834,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
                     // basic multilingual plane
                     b1 as u32
                 };
-                state.dispatch_event(Event::Input(cp));
+                state.dispatch_event(Event::Input(char::from_u32_unchecked(cp)));
             }
             0
         },
@@ -844,7 +844,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             #[cfg(feature = "input")]
             if brony_detected {
                 let state = &mut *user_state(hwnd);
-                state.dispatch_event(Event::Input(wparam as u32));
+                state.dispatch_event(Event::Input(char::from_u32_unchecked(wparam as _)));
             }
             brony_detected.into()
         },
