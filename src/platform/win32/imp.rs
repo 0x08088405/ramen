@@ -136,6 +136,7 @@ unsafe extern "system" fn connection_proc(fparam: *mut c_void) -> DWORD {
                 }
             } else {
                 // window message
+                let _ = TranslateMessage(msg.as_ptr());
                 let _ = DispatchMessageW(msg.as_ptr());
             }
         } else if success == 0 {
@@ -816,6 +817,36 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
                 (*user_state(hwnd)).close_reason = Some(CloseReason::SystemMenu);
             }
             DefWindowProcW(hwnd, msg, wparam, lparam)
+        },
+
+        WM_CHAR => {
+            #[cfg(feature = "input")]
+            {
+                let state = &mut *user_state(hwnd);
+                let data = wparam as u32;
+                let b1 = data & 0xFF;
+                let cp = if matches!(b1, 0xD800..=0xDFFF) {
+                    // supplementary plane
+                    let b2 = (data >> 16) & 0xFF;
+                    let u = ((b1 - 0xD800) << 10) | (b2 - 0xDC00);
+                    u + 0x10000
+                } else {
+                    // basic multilingual plane
+                    b1 as u32
+                };
+                state.dispatch_event(Event::Input(cp));
+            }
+            0
+        },
+
+        WM_UNICHAR => {
+            let brony_detected = wparam != 0xFFFF;
+            #[cfg(feature = "input")]
+            if brony_detected {
+                let state = &mut *user_state(hwnd);
+                state.dispatch_event(Event::Input(wparam as u32));
+            }
+            brony_detected.into()
         },
 
         WM_MOUSEMOVE => {

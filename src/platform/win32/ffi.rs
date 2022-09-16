@@ -344,6 +344,8 @@ pub(crate) const WM_SETFOCUS: UINT = 0x0007;
 pub(crate) const WM_KILLFOCUS: UINT = 0x0008;
 pub(crate) const WM_QUIT: UINT = 0x0012;
 pub(crate) const WM_ENABLE: UINT = 0x000A;
+pub(crate) const WM_CHAR: UINT = 0x0102;
+pub(crate) const WM_UNICHAR: UINT = 0x0109;
 pub(crate) const WM_SETREDRAW: UINT = 0x000B;
 pub(crate) const WM_SETTEXT: UINT = 0x000C;
 pub(crate) const WM_PAINT: UINT = 0x000F;
@@ -603,6 +605,7 @@ extern "system" {
     pub(crate) fn PostThreadMessageW(idThread: DWORD, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL;
     pub(crate) fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     pub(crate) fn DispatchMessageW(lpmsg: *const MSG) -> LRESULT;
+    pub(crate) fn TranslateMessage(lpmsg: *const MSG) -> LRESULT;
     pub(crate) fn PostQuitMessage(nExitCode: c_int);
 
     // Message loop utility
