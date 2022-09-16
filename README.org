@@ -13,6 +13,7 @@
 - libxcb
 If the =input= feature is enabled:
 - libxcb-xinput
+- libxkbcommon
 The corresponding libraries will also need to be installed on the target machine - otherwise you'll get an =Unsupported= error from =Connection::new()=.
 * Licence
 Due to the proprietary nature of games, ramen is available under the short and permissive [[./LICENCE.org][zlib/libpng licence]].
