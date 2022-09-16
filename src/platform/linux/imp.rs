@@ -655,9 +655,14 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
     // To avoid some annoying situations we also request keysym2 which is the modified keysym.
     // Values mostly copied from <X11/keysymdef.h>
     match keysym {
-        0x2C => Some(Key::OemComma),
-        0x2D => Some(Key::OemMinus),
-        0x2E => Some(Key::OemPeriod),
+        0x22 => Some(Key::Quote),
+        0x23 => Some(Key::Hash),
+        0x27 => Some(Key::Apostrophe),
+        0x2B => Some(Key::Plus),
+        0x2C => Some(Key::Comma),
+        0x2D => Some(Key::Minus),
+        0x2E => Some(Key::Period),
+        0x2F => Some(Key::Slash),
         0x30 => Some(Key::Alpha0),
         0x31 => Some(Key::Alpha1),
         0x32 => Some(Key::Alpha2),
@@ -668,7 +673,17 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
         0x37 => Some(Key::Alpha7),
         0x38 => Some(Key::Alpha8),
         0x39 => Some(Key::Alpha9),
-        0x3D => Some(Key::OemPlus),
+        0x3A => Some(Key::Colon),
+        0x3B => Some(Key::Semicolon),
+        0x3C => Some(Key::LessThan),
+        0x3D => Some(Key::Equals),
+        0x3E => Some(Key::GreaterThan),
+        0x3F => Some(Key::QuestionMark),
+        0x5B => Some(Key::BracketLeft),
+        0x5C => Some(Key::Backslash),
+        0x5D => Some(Key::BracketRight),
+        0x5F => Some(Key::Underscore),
+        0x60 => Some(Key::Grave),
         0x61 => Some(Key::A),
         0x62 => Some(Key::B),
         0x63 => Some(Key::C),
@@ -695,6 +710,9 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
         0x78 => Some(Key::X),
         0x79 => Some(Key::Y),
         0x7A => Some(Key::Z),
+        0x7B => Some(Key::BraceLeft),
+        0x7C => Some(Key::Pipe),
+        0x7D => Some(Key::BraceRight),
         0xFF08 => Some(Key::Backspace),
         0xFF09 => Some(Key::Tab),
         0xFF0D => Some(Key::Return),
@@ -746,6 +764,7 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
         0xFFEB => Some(Key::LeftSuper),
         0xFFEC => Some(Key::RightSuper),
         0xFFFF => Some(Key::Delete),
+        
         (0xFF80..=0xFFB9) => match keysym2 {
             // We use the modified keysym for numpad keys because modifiers actually change our mapping rules
             // eg: numpad "0" maps to either `Keypad0` or `Insert` depending on the states of shift and numlock
