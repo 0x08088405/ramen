@@ -17,6 +17,7 @@ load! {
         fn XCloseDisplay(display: *mut Display) -> c_int;
         #[cfg(feature = "input")]
         fn XLookupKeysym(event_struct: *mut XKeyEvent, index: c_int) -> KeySym;
+        #[cfg(feature = "input")]
         fn XLookupString(event_struct: *mut XKeyEvent, buffer_return: *mut c_char, bytes_buffer: c_int, keysym_return: *mut KeySym, status_in_out: *mut c_void) -> c_int;
     }
     pub(super) xlib_xcb(libX11_xcb) "libX11-xcb.so.1", "libX11-xcb.so" {
