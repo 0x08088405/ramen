@@ -592,13 +592,15 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
                             &mut modified_keysym,
                             std::ptr::null_mut(),
                         );
-                        if let Ok(utf32) = u32::try_from(modified_keysym) {
-                            if let Some(ch) = char::from_u32(xkb_keysym_to_utf32(utf32)) {
-                                if ch != '\0' {
+
+                        if is_press && modified_keysym != 0 {
+                            if let Ok(utf32) = u32::try_from(modified_keysym) {
+                                if let Some(ch) = char::from_u32(xkb_keysym_to_utf32(utf32)) {
                                     window.event_buffer.push(Event::Input(ch));
                                 }
                             }
                         }
+
                         if let Some(k) = keysym_to_key(unmodified_keysym, modified_keysym) {
                             window.event_buffer.push(f(k));
                         }
