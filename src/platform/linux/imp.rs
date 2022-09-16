@@ -589,15 +589,16 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
                             window.event_buffer.push(f(k));
                         }
                     },
-                    XCB_INPUT_BUTTON_PRESS => {
-                        // TODO: this
-                        let _event = &*(ev as *mut xcb_input_button_press_event_t);
-                        println!("Button press")
-                    },
-                    XCB_INPUT_BUTTON_RELEASE => {
-                        // TODO: this
-                        let _event = &*(ev as *mut xcb_input_button_release_event_t);
-                        println!("Button release")
+                    e @ XCB_INPUT_BUTTON_PRESS | e @ XCB_INPUT_BUTTON_RELEASE => {
+                        use crate::input::MouseButton;
+                        let event = &*(ev as *mut xcb_input_button_press_event_t);
+                        let f = if e == XCB_INPUT_BUTTON_PRESS { Event::MouseDown } else { Event::MouseUp };
+                        match event.detail {
+                            1 => window.event_buffer.push(f(MouseButton::Left)),
+                            2 => window.event_buffer.push(f(MouseButton::Middle)),
+                            3 => window.event_buffer.push(f(MouseButton::Right)),
+                            _ => (),
+                        }
                     },
                     XCB_INPUT_MOTION => {
                         let event = &*(ev as *mut xcb_input_motion_event_t);

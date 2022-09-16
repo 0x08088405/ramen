@@ -380,7 +380,7 @@ mod input {
     }
     //pub(in super::super) type xcb_input_key_release_event_t = xcb_input_key_press_event_t;
     pub(in super::super) type xcb_input_button_press_event_t = xcb_input_key_press_event_t;
-    pub(in super::super) type xcb_input_button_release_event_t = xcb_input_key_press_event_t;
+    //pub(in super::super) type xcb_input_button_release_event_t = xcb_input_key_press_event_t;
     pub(in super::super) type xcb_input_motion_event_t = xcb_input_key_press_event_t;
 
     #[repr(C)]
