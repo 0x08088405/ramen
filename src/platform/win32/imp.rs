@@ -600,22 +600,8 @@ fn translate_vk(wparam: WPARAM) -> Option<Key> {
         // Reserved.
         0xB8..=0xB9 => None,
 
-        VK_OEM_1 => Some(Key::Oem1),
-        VK_OEM_PLUS => Some(Key::OemPlus),
-        VK_OEM_COMMA => Some(Key::OemComma),
-        VK_OEM_MINUS => Some(Key::OemMinus),
-        VK_OEM_PERIOD => Some(Key::OemPeriod),
-        VK_OEM_2 => Some(Key::Oem2),
-        VK_OEM_3 => Some(Key::Oem3),
-
         // Reserved (VK_GAMEPAD_xxx).
         0xC1..=0xDA => None,
-
-        VK_OEM_4 => Some(Key::Oem4),
-        VK_OEM_5 => Some(Key::Oem5),
-        VK_OEM_6 => Some(Key::Oem6),
-        VK_OEM_7 => Some(Key::Oem7),
-        VK_OEM_8 => Some(Key::Oem8),
 
         // Reserved.
         0xE0 => None,
@@ -656,6 +642,35 @@ fn translate_vk(wparam: WPARAM) -> Option<Key> {
 
         // Undocumented.
         0xFF => None,
+
+        // The keys not listed above are OEM. We handle these by mapping to an ASCII char, then mapping that to `Key`.
+        k => {
+            match unsafe { MapVirtualKeyW(k.into(), 2) } { // 2 is MAPVK_VK_TO_CHAR
+                34 => Some(Key::Quote),
+                35 => Some(Key::Hash),
+                39 => Some(Key::Apostrophe),
+                43 => Some(Key::Plus),
+                44 => Some(Key::Comma),
+                45 => Some(Key::Minus),
+                46 => Some(Key::Period),
+                47 => Some(Key::Slash),
+                58 => Some(Key::Colon),
+                59 => Some(Key::Semicolon),
+                60 => Some(Key::LessThan),
+                61 => Some(Key::Equals),
+                62 => Some(Key::GreaterThan),
+                63 => Some(Key::QuestionMark),
+                91 => Some(Key::BracketLeft),
+                92 => Some(Key::Backslash),
+                93 => Some(Key::BracketRight),
+                95 => Some(Key::Underscore),
+                96 => Some(Key::Grave),
+                123 => Some(Key::BraceLeft),
+                124 => Some(Key::Pipe),
+                125 => Some(Key::BraceRight),
+                _ => None,
+            }
+        },
     }
 }
 

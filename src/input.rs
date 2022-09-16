@@ -33,7 +33,11 @@ pub enum Key {
     // alphanumeric
     A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
     Alpha0, Alpha1, Alpha2, Alpha3, Alpha4, Alpha5, Alpha6, Alpha7, Alpha8, Alpha9,
-    OemComma, OemMinus, OemPeriod, OemPlus, Oem1, Oem2, Oem3, Oem4, Oem5, Oem6, Oem7, Oem8,
+
+    // OEM keys which may not be present on all keyboards
+    Minus, Plus, Equals, Period, Comma, Hash, BracketLeft, BracketRight, BraceLeft, BraceRight,
+    Grave, Apostrophe, Semicolon, Colon, Underscore, Pipe, Slash, Backslash, QuestionMark,
+    LessThan, GreaterThan, Quote,
 
     // numpad
     KeypadAdd, KeypadSubtract, KeypadMultiply, KeypadDivide,

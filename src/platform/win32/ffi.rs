@@ -622,6 +622,7 @@ extern "system" {
     pub(crate) fn GetAsyncKeyState(vKey: c_int) -> SHORT;
     pub(crate) fn GetSystemMetrics(nIndex: c_int) -> c_int;
     pub(crate) fn SetCursor(hCursor: HCURSOR) -> HCURSOR;
+    pub(crate) fn MapVirtualKeyW(hCode: UINT, uMapType: UINT) -> UINT;
 
     // Misc legacy garbage
     pub(crate) fn EnableMenuItem(hMenu: HMENU, uIDEnableItem: UINT, uEnable: UINT) -> BOOL;
