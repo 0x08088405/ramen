@@ -65,7 +65,7 @@ pub fn f() {
                 },
                 #[cfg(feature = "input")]
                 Event::Input(code) => {
-                    println!("Input: {}", char::from_u32(*code).unwrap());
+                    println!("Input: {}", code);
                 },
                 _ => (),
             }

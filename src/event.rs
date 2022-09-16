@@ -30,8 +30,7 @@ pub enum Event {
 
     #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
     #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
-    // codepoint!!!! woo!!!
-    Input(u32),
+    Input(char),
 
     #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
     #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
