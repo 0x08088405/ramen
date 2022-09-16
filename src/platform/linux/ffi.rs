@@ -17,7 +17,7 @@ load! {
         fn XCloseDisplay(display: *mut Display) -> c_int;
         #[cfg(feature = "input")]
         fn XLookupKeysym(event_struct: *mut XKeyEvent, index: c_int) -> KeySym;
-        //fn XLookupString(event_struct: *mut XKeyEvent, buffer_return: *mut c_char, bytes_buffer: c_int, keysym_return: *mut KeySym, status_in_out: *mut c_void) -> c_int;
+        fn XLookupString(event_struct: *mut XKeyEvent, buffer_return: *mut c_char, bytes_buffer: c_int, keysym_return: *mut KeySym, status_in_out: *mut c_void) -> c_int;
     }
     pub(super) xlib_xcb(libX11_xcb) "libX11-xcb.so.1", "libX11-xcb.so" {
         fn XGetXCBConnection(dpy: *mut Display) -> *mut xcb_connection_t;
@@ -85,6 +85,11 @@ load! {
     pub(super) xinput(libxcb_xinput) "libxcb-xinput.so.0", "libxcb-xinput.so" {
         #[cfg(feature = "input")]
         fn xcb_input_xi_select_events_checked(c: *mut xcb_connection_t, window: xcb_window_t, num_mask: u16, masks: *mut xcb_input_event_mask_t) -> c_uint;
+    }
+    #[cfg(feature = "input")]
+    pub(super) xkbcommon(libxkbcommon) "libxkbcommon.so.0", "libxkbcommon.so" {
+        #[cfg(feature = "input")]
+        fn xkb_keysym_to_utf32(keysym: u32) -> u32;
     }
 }
 

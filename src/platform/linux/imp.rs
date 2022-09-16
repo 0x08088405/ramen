@@ -86,6 +86,7 @@ impl Connection {
                 free(xi.cast());
 
                 libxcb_xinput::load()?;
+                libxkbcommon::load()?;
             }
 
             // Try to get machine's hostname
@@ -582,10 +583,23 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
                         } else {
                             Event::KeyboardUp
                         };
-                        if let Some(k) = keysym_to_key(
-                            XLookupKeysym(&mut xevent, 0),
-                            XLookupKeysym(&mut xevent, 1),
-                        ) {
+                        let unmodified_keysym = XLookupKeysym(&mut xevent, 0);
+                        let mut modified_keysym: KeySym = 0;
+                        let _ = XLookupString(
+                            &mut xevent,
+                            std::ptr::null_mut(),
+                            0,
+                            &mut modified_keysym,
+                            std::ptr::null_mut(),
+                        );
+                        if let Ok(utf32) = u32::try_from(modified_keysym) {
+                            if let Some(ch) = char::from_u32(xkb_keysym_to_utf32(utf32)) {
+                                if ch != '\0' {
+                                    window.event_buffer.push(Event::Input(ch));
+                                }
+                            }
+                        }
+                        if let Some(k) = keysym_to_key(unmodified_keysym, modified_keysym) {
                             window.event_buffer.push(f(k));
                         }
                     },
@@ -634,7 +648,7 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
     // This function converts a keysym, as returned by XLookupKeysym, to a ramen key.
     // X does have multiple keysyms per key (for example, XK_A vs XK_a depending if shift is held),
     // however, XLookupKeysym ignores all modifiers, so this function should only receive "base" keysym values.
-    // To avoid some annoying situations we also request keysym2 which is the key's symbol when holding shift.
+    // To avoid some annoying situations we also request keysym2 which is the modified keysym.
     match keysym {
         0x2C => Some(Key::OemComma),
         0x2D => Some(Key::OemMinus),
