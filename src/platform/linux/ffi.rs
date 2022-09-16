@@ -331,7 +331,7 @@ mod input {
         pub(in super::super) group: xcb_input_group_info_t,
     }
     pub(in super::super) type xcb_input_leave_event_t = xcb_input_enter_event_t;
-    pub(in super::super) type xcb_input_focus_in_event_t = xcb_input_enter_event_t;
+    //pub(in super::super) type xcb_input_focus_in_event_t = xcb_input_enter_event_t;
     //pub(in super::super) type xcb_input_focus_out_event_t = xcb_input_enter_event_t;
 
     #[repr(C)]

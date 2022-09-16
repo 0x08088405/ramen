@@ -10,7 +10,7 @@ const QUEUE_SIZE: usize = 256;
 
 pub(crate) struct Connection {
     details: ConnectionDetails,
-    event_buffer: HashMap<xcb_window_t, Vec<Event>>,
+    event_buffer: HashMap<xcb_window_t, Vec<*mut xcb_generic_event_t>>,
     hostname: Option<Vec<c_char>>,
 }
 
@@ -199,6 +199,11 @@ impl Atoms {
 
 pub(crate) struct Window {
     connection: connection::Connection,
+    details: WindowDetails,
+}
+
+// Proxy struct that pretty much only exists to get around the fact that we're using Rust
+pub(crate) struct WindowDetails {
     handle: xcb_window_t,
     event_buffer: Vec<Event>,
 }
@@ -222,20 +227,20 @@ impl Window {
             // Clear the event queue, in case any events remain in it intended for a previous object with this xid we just claimed
             let event = xcb_poll_for_event(c);
             if !event.is_null() {
-                if let Some((event, window)) = process_event(event, &connection.details) {
+                if let Some(window) = get_event_window(event, &connection.details) {
                     if let Some(queue) = connection.event_buffer.get_mut(&window) {
                         queue.push(event);
                     }
                 }
             }
-            let mut event = xcb_poll_for_queued_event(c);
-            while !event.is_null() {
-                if let Some((event, window)) = process_event(event, &connection.details) {
+            loop {
+                let event = xcb_poll_for_queued_event(c);
+                if event.is_null() { break }
+                if let Some(window) = get_event_window(event, &connection.details) {
                     if let Some(queue) = connection.event_buffer.get_mut(&window) {
                         queue.push(event);
                     }
                 }
-                event = xcb_poll_for_queued_event(c);
             }
 
             // Create the new X window
@@ -395,60 +400,65 @@ impl Window {
             std::mem::drop(connection_mtx);
             Ok(Window {
                 connection: builder.connection,
-                handle: xid,
-                event_buffer: Vec::with_capacity(QUEUE_SIZE),
+                details: WindowDetails {
+                    handle: xid,
+                    event_buffer: Vec::with_capacity(QUEUE_SIZE),
+                },
             })
         }
     }
 
     pub(crate) fn events(&self) -> &[Event] {
-        &self.event_buffer
+        &self.details.event_buffer
     }
 
     pub(crate) fn poll_events(&mut self) {
         unsafe {
+            let window_details = &mut self.details;
             // First: lock the global event queue, which is used as backup storage for events
             // which have been pulled but are not immediately relevant
             let mut connection_ = mutex_lock(&self.connection.0);
             let Connection {
-                details,
+                details: connection_details,
                 event_buffer: map,
                 ..
             } = &mut *connection_;
-            let c = details.connection;
+            let c = connection_details.connection;
 
             // Clear our event buffer of the previous set of events
-            self.event_buffer.clear();
+            window_details.event_buffer.clear();
 
             // Fill our event buffer with any events which may have been stored in the global event queue,
             // also clearing them from the global queue
             // Note: this queue SHOULD always exist, but it's possible some bad or malicious user code might get a
             // `None` result, so it's better to check and take no action if there's no queue to copy from...
-            if let Some(queue) = map.get_mut(&self.handle) {
-                std::mem::swap(&mut self.event_buffer, queue);
-            }
+            //if let Some(queue) = map.get_mut(&self.handle) {
+            //    std::mem::swap(&mut self.event_buffer, queue);
+            //}
+            // TODO: this ^^^^^^^^^^
 
             // Call `poll_event` once, which populates XCB's internal linked list from the connection
             let event = xcb_poll_for_event(c);
             if !event.is_null() {
-                if let Some((event, window)) = process_event(event, details) {
-                    if window == self.handle {
-                        self.event_buffer.push(event);
+                if let Some(window) = get_event_window(event, connection_details) {
+                    if window == window_details.handle {
+                        process_event(event, window_details, connection_details);
                     } else if let Some(queue) = map.get_mut(&window) {
                         queue.push(event);
                     }
                 }
             }
-            let mut event = xcb_poll_for_queued_event(c);
-            while !event.is_null() {
-                if let Some((event, window)) = process_event(event, details) {
-                    if window == self.handle {
-                        self.event_buffer.push(event);
+            // Now repeatedly call `poll_for_queued_event` to drain xcb's queue without any new events arriving in it
+            loop {
+                let event = xcb_poll_for_queued_event(c);
+                if event.is_null() { break }
+                if let Some(window) = get_event_window(event, connection_details) {
+                    if window == window_details.handle {
+                        process_event(event, window_details, connection_details);
                     } else if let Some(queue) = map.get_mut(&window) {
                         queue.push(event);
                     }
                 }
-                event = xcb_poll_for_queued_event(c);
             }
         }
     }
@@ -459,19 +469,46 @@ impl Drop for Window {
         let mut connection_ = mutex_lock(&self.connection.0);
         let connection = &mut connection_;
         unsafe {
-            let _ = xcb_destroy_window(connection.details.connection, self.handle);
+            let _ = xcb_destroy_window(connection.details.connection, self.details.handle);
             let _ = xcb_flush(connection.details.connection);
         }
     }
 }
 
-unsafe fn process_event(ev: *mut xcb_generic_event_t, details: &ConnectionDetails) -> Option<(Event, xcb_window_t)> {
-    let mapping = match (*ev).response_type & !(1 << 7) {
+// Gets the window an event is destined for, if any. `None` results should be discarded.
+unsafe fn get_event_window(ev: *mut xcb_generic_event_t, details: &ConnectionDetails) -> Option<xcb_window_t> {
+    #[cfg(not(feature = "input"))]
+    { _ = details }
+    match (*ev).response_type & !(1 << 7) {
+        XCB_CLIENT_MESSAGE => Some((*(ev as *mut xcb_client_message_event_t)).window),
+        XCB_FOCUS_IN | XCB_FOCUS_OUT => Some((*(ev as *mut xcb_focus_in_event_t)).event),
+        #[cfg(feature = "input")]
+        XCB_GE_GENERIC => {
+            let event = &*(ev as *mut xcb_ge_generic_event_t);
+            if event.extension == details.extensions.xinput {
+                match event.event_type & !(1 << 7) {
+                    XCB_INPUT_KEY_PRESS | XCB_INPUT_KEY_RELEASE | XCB_INPUT_BUTTON_PRESS | XCB_INPUT_BUTTON_RELEASE | XCB_INPUT_MOTION
+                        => Some((*(ev as *mut xcb_input_button_press_event_t)).event),
+                    XCB_INPUT_ENTER | XCB_INPUT_LEAVE | XCB_INPUT_FOCUS_IN | XCB_INPUT_FOCUS_OUT
+                        => Some((*(ev as *mut xcb_input_enter_event_t)).event),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        },
+        _ => None,
+    }
+}
+
+// This function assumes the given event is destined for the given Window - check first with get_event_window
+unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails, details: &ConnectionDetails) {
+    match (*ev).response_type & !(1 << 7) {
         XCB_CLIENT_MESSAGE => {
             let event = &mut *(ev as *mut xcb_client_message_event_t);
             if event.r#type == details.atoms.wm_protocols && event.format == 32 {
                 if event.client_data.data32[0] == details.atoms.wm_delete_window {
-                    Some((Event::CloseRequest(CloseReason::SystemMenu), event.window))
+                    window.event_buffer.push(Event::CloseRequest(CloseReason::SystemMenu))
                 } else if event.client_data.data32[0] == details.atoms._net_wm_ping {
                     // data32[2] contains the window xid, that might be useful for something?
                     event.window = (*details.screen).root;
@@ -483,17 +520,12 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, details: &ConnectionDetail
                         (event as *const _) as *const i8,
                     ));
                     let _ = xcb_flush(details.connection); // Makes sure the event is processed before we free it
-                    None
-                } else {
-                    None
                 }
-            } else {
-                None
             }
         },
         e @ XCB_FOCUS_IN | e @ XCB_FOCUS_OUT => {
             let state = e == XCB_FOCUS_IN;
-            Some((Event::Focus(state), (*(ev as *mut xcb_focus_in_event_t)).event))
+            window.event_buffer.push(Event::Focus(state));
         },
         #[cfg(feature = "input")]
         XCB_GE_GENERIC => {
@@ -526,53 +558,48 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, details: &ConnectionDetail
                         } else {
                             Event::KeyboardUp
                         };
-                        keysym_to_key(
+                        if let Some(k) = keysym_to_key(
                             XLookupKeysym(&mut xevent, 0),
                             XLookupKeysym(&mut xevent, 1),
-                        ).map(|x| (f(x), event.event))
+                        ) {
+                            window.event_buffer.push(f(k));
+                        }
                     },
                     XCB_INPUT_BUTTON_PRESS => {
                         // TODO: this
                         let _event = &*(ev as *mut xcb_input_button_press_event_t);
-                        println!("Button press");
-                        None
+                        println!("Button press")
                     },
                     XCB_INPUT_BUTTON_RELEASE => {
                         // TODO: this
                         let _event = &*(ev as *mut xcb_input_button_release_event_t);
-                        println!("Button release");
-                        None
+                        println!("Button release")
                     },
                     XCB_INPUT_MOTION => {
                         let event = &*(ev as *mut xcb_input_motion_event_t);
-                        Some((Event::MouseMove(((event.event_x >> 16) as _, (event.event_y >> 16) as _)), event.event))
+                        window.event_buffer.push(Event::MouseMove(((event.event_x >> 16) as _, (event.event_y >> 16) as _)))
                     },
                     XCB_INPUT_ENTER => {
                         // TODO: this
                         let _event = &*(ev as *mut xcb_input_enter_event_t);
-                        println!("Input enter");
-                        None
+                        println!("Input enter")
                     },
                     XCB_INPUT_LEAVE => {
                         // TODO: this
                         let _event = &*(ev as *mut xcb_input_leave_event_t);
-                        println!("Input leave");
-                        None
+                        println!("Input leave")
                     },
                     e @ XCB_INPUT_FOCUS_IN | e @ XCB_INPUT_FOCUS_OUT => {
                         let state = e == XCB_INPUT_FOCUS_IN;
-                        Some((Event::Focus(state), (*(ev as *mut xcb_input_focus_in_event_t)).event))
+                        window.event_buffer.push(Event::Focus(state))
                     },
-                    _ => None,
+                    _ => (),
                 }
-            } else {
-                None
             }
         },
-        _ => None,
+        _ => (),
     };
     free(ev.cast());
-    mapping
 }
 
 #[cfg(feature = "input")]
