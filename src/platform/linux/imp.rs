@@ -544,9 +544,8 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, details: &ConnectionDetail
                         None
                     },
                     XCB_INPUT_MOTION => {
-                        // TODO: this
-                        let _event = &*(ev as *mut xcb_input_motion_event_t);
-                        None
+                        let event = &*(ev as *mut xcb_input_motion_event_t);
+                        Some((Event::MouseMove(((event.event_x >> 16) as _, (event.event_y >> 16) as _)), event.event))
                     },
                     XCB_INPUT_ENTER => {
                         // TODO: this
