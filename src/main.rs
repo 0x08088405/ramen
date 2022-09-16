@@ -1,7 +1,18 @@
 use ramen::{connection::Connection, event::Event}; // There's no actual error here it's an RA bug sorry in advance
 
 pub fn main() {
-    let t = [std::thread::spawn(f)];
+    let c = match Connection::new() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error setting up connection: {:?}", e);
+            return;
+        },
+    };
+
+    //f(c);
+
+    let cs = [c.clone(), c.clone(), c.clone(), c.clone(), c.clone()];
+    let t = cs.map(|c| std::thread::spawn(move || f(c)));
     for x in t {
         if x.join().is_err() {
             eprintln!("Exiting main thread because join() failed");
@@ -10,14 +21,7 @@ pub fn main() {
     }
 }
 
-pub fn f() {
-    let connection = match Connection::new() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error setting up connection: {:?}", e);
-            return;
-        },
-    };
+pub fn f(connection: Connection) {
     let mut window = match connection.into_builder().title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏").build() {
         Ok(w) => w,
         Err(e) => {
