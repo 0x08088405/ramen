@@ -593,6 +593,10 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
                             std::ptr::null_mut(),
                         );
 
+                        if let Some(k) = keysym_to_key(unmodified_keysym, modified_keysym) {
+                            window.event_buffer.push(f(k));
+                        }
+
                         if is_press {
                             if let Ok(utf32) = u32::try_from(modified_keysym) {
                                 if let Some(ch) = char::from_u32(xkb_keysym_to_utf32(utf32)) {
@@ -601,10 +605,6 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
                                     }
                                 }
                             }
-                        }
-
-                        if let Some(k) = keysym_to_key(unmodified_keysym, modified_keysym) {
-                            window.event_buffer.push(f(k));
                         }
                     },
                     e @ XCB_INPUT_BUTTON_PRESS | e @ XCB_INPUT_BUTTON_RELEASE => {
