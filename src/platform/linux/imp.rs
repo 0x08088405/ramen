@@ -432,10 +432,12 @@ impl Window {
             // also clearing them from the global queue
             // Note: this queue SHOULD always exist, but it's possible some bad or malicious user code might get a
             // `None` result, so it's better to check and take no action if there's no queue to copy from...
-            //if let Some(queue) = map.get_mut(&self.handle) {
-            //    std::mem::swap(&mut self.event_buffer, queue);
-            //}
-            // TODO: this ^^^^^^^^^^
+            if let Some(queue) = map.get_mut(&window_details.handle) {
+                for event in queue.iter().copied() {
+                    process_event(event, window_details, connection_details);
+                }
+                queue.clear();
+            }
 
             // Call `poll_event` once, which populates XCB's internal linked list from the connection
             let event = xcb_poll_for_event(c);
