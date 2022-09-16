@@ -30,6 +30,11 @@ pub enum Event {
 
     #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
     #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
+    // codepoint!!!! woo!!!
+    Input(u32),
+
+    #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
     MouseDown(MouseButton),
 
     #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]

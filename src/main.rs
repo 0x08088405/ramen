@@ -63,6 +63,10 @@ pub fn f() {
                 Event::MouseMove(t) => {
                     println!("Mouse move: {:?}", t);
                 },
+                #[cfg(feature = "input")]
+                Event::Input(code) => {
+                    println!("Input: {}", char::from_u32(*code).unwrap());
+                },
                 _ => (),
             }
         }
