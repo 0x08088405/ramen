@@ -150,6 +150,7 @@ pub(super) const XCB_ATOM_ATOM: xcb_atom_t = 4;
 pub(super) const XCB_ATOM_CARDINAL: xcb_atom_t = 6;
 pub(super) const XCB_ATOM_STRING: xcb_atom_t = 31;
 pub(super) const XCB_ATOM_WM_NAME: xcb_atom_t = 39;
+pub(super) const XCB_ATOM_WM_CLASS: xcb_atom_t = 67;
 
 pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
 #[cfg(feature = "input")]

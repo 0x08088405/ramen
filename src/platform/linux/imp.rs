@@ -385,6 +385,29 @@ impl Window {
                 );
             }
 
+            let mut instance = "unknown".to_string();
+            if let Some(name) = std::env::var_os("RESOURCE_NAME") {
+                instance = name.as_os_str().to_string_lossy().into_owned();
+            } else {
+                if let Some(argv0) = std::env::args_os().next() {
+                    let path = std::path::Path::new(argv0.as_os_str());
+                    if let Some(basename) = path.file_name() {
+                        instance = basename.to_string_lossy().into_owned();
+                    }
+                }
+            }
+            let wm_class = format!("{}\0{}\0", instance, builder.class_name.as_ref());
+            _ = xcb_change_property(
+                c,
+                XCB_PROP_MODE_REPLACE,
+                xid,
+                XCB_ATOM_WM_CLASS,
+                XCB_ATOM_STRING,
+                8,
+                wm_class.len() as _,
+                wm_class.as_ptr().cast(),
+            );
+
             // Map window to screen
             if builder.style.visible {
                 let _ = xcb_map_window(c, xid);
