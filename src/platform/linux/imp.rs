@@ -336,26 +336,7 @@ impl Window {
             // Note: multibyte characters won't render correctly in WM_NAME, but any modern and worthwhile WM will
             // prioritise using _NET_WM_NAME which is UTF-8 as standard, that's why it's better to write both.
             let title = builder.title.as_ref();
-            let _ = xcb_change_property(
-                c,
-                XCB_PROP_MODE_REPLACE,
-                xid,
-                connection.details.atoms._net_wm_name,
-                connection.details.atoms.utf8_string,
-                8,
-                title.bytes().len() as _,
-                title.as_ptr().cast(),
-            );
-            let _ = xcb_change_property(
-                c,
-                XCB_PROP_MODE_REPLACE,
-                xid,
-                XCB_ATOM_WM_NAME,
-                XCB_ATOM_STRING,
-                8,
-                title.bytes().len() as _,
-                title.as_ptr().cast(),
-            );
+            internal_set_title(c, xid, &connection.details.atoms, title);
 
             // If hostname is known, get PID of current process and write that to _NET_WM_PID
             // But don't write either of these properties if hostname is not known, because:
@@ -515,6 +496,14 @@ impl Window {
         let wh = [width as u32, height as u32];
         unsafe {
             _ = xcb_configure_window(connection.details.connection, self.details.handle, 4|8, wh.as_ptr().cast());
+        }
+    }
+
+    pub(crate) fn set_title(&self, title: &str) {
+        let mut connection_ = mutex_lock(&self.connection.0);
+        let connection = &mut connection_;
+        unsafe {
+            internal_set_title(connection.details.connection, self.details.handle, &connection.details.atoms, title);
         }
     }
 
@@ -727,6 +716,30 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
         _ => (),
     };
     free(ev.cast());
+}
+
+// internal-only function for setting window name, assumes we hold connection lock
+unsafe fn internal_set_title(c: *mut xcb_connection_t, xid: xcb_window_t, atoms: &Atoms, title: &str) {
+    let _ = xcb_change_property(
+        c,
+        XCB_PROP_MODE_REPLACE,
+        xid,
+        atoms._net_wm_name,
+        atoms.utf8_string,
+        8,
+        title.bytes().len() as _,
+        title.as_ptr().cast(),
+    );
+    let _ = xcb_change_property(
+        c,
+        XCB_PROP_MODE_REPLACE,
+        xid,
+        XCB_ATOM_WM_NAME,
+        XCB_ATOM_STRING,
+        8,
+        title.bytes().len() as _,
+        title.as_ptr().cast(),
+    );
 }
 
 #[cfg(feature = "input")]
