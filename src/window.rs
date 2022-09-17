@@ -38,6 +38,10 @@ impl Window {
         self.0.poll_events()
     }
 
+    pub fn set_maximised(&self, maximised: bool) {
+        self.0.set_maximised(maximised)
+    }
+
     /// Sets the position of the outer top-left of the window, including any decorations it may have.
     /// 
     /// The position is measured in pixels relative to the top-left of the user's desktop, across all monitors.
