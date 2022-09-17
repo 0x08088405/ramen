@@ -859,7 +859,9 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             let x = lparam & 0xFFFF;
             let y = (lparam >> 16) & 0xFFFF;
             let state = &mut *user_state(hwnd);
-            state.dispatch_event(Event::Move((x as _, y as _)));
+            if !(x as i16 == -32000 || y as i16 == -32000) {
+                state.dispatch_event(Event::Move((x as _, y as _)));
+            }
             0
         },
 
