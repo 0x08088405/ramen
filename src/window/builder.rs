@@ -27,7 +27,7 @@ impl Builder {
             class_name: Cow::Borrowed("ramen_window"),
             maximised: false,
             position: None,
-            size: (800, 608),
+            size: (800, 600),
             style: match style {
                 // Why is `Option::unwrap_or` not const fn?!
                 Some(style) => style,
@@ -98,16 +98,30 @@ impl Builder {
         self
     }
 
+    /// Sets whether the window should begin maximised on the user's monitor.
+    /// 
+    /// If the user has multiple monitors, which monitor it will be maximised on depends on what has been passed to
+    /// `position()` before this call. If `position()` is left as default, the window will usually appear on the
+    /// primary monitor. The behaviour of `position()` and `size()` after calling `maximised(true)` is undefined.
+    /// 
+    /// Defaults to `false`.
     pub fn maximised(mut self, maximised: bool) -> Self {
         self.maximised = maximised;
         self
     }
 
+    /// Sets the position of the top-left of the window on the screen. If `None`, the operating system will decide
+    /// where to place the window.
+    /// 
+    /// Defaults to `None`.
     pub fn position(mut self, position: Option<(i16, i16)>) -> Self {
         self.position = position;
         self
     }
 
+    /// Sets the size of the window.
+    /// 
+    /// Defaults to (800, 600).
     pub fn size(mut self, size: (u16, u16)) -> Self {
         self.size = size;
         self
