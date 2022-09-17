@@ -22,7 +22,11 @@ pub fn main() {
 }
 
 pub fn f(connection: Connection) {
-    let mut window = match connection.into_builder().title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏").build() {
+    let mut window = match connection
+        .into_builder()
+        .title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏")
+        .build()
+    {
         Ok(w) => w,
         Err(e) => {
             eprintln!("Error building window: {:?}", e);

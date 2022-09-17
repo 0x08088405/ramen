@@ -478,6 +478,18 @@ impl Window {
             mem::drop(guard);
         }
     }
+
+    pub(crate) fn set_position(&self, (x, y): (i16, i16)) {
+        unsafe {
+            let _ = SetWindowPos(self.hwnd, ptr::null_mut(), x as _, y as _, 0, 0, SWP_NOSIZE);
+        }
+    }
+
+    pub(crate) fn set_size(&self, (w, h): (u16, u16)) {
+        unsafe {
+            let _ = SetWindowPos(self.hwnd, ptr::null_mut(), 0, 0, w as _, h as _, SWP_NOMOVE);
+        }
+    }
 }
 
 impl WindowState {

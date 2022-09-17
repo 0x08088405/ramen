@@ -37,4 +37,12 @@ impl Window {
     pub fn poll_events(&mut self) {
         self.0.poll_events()
     }
+
+    pub fn set_position(&self, position: (i16, i16)) {
+        self.0.set_position(position)
+    }
+
+    pub fn set_size(&self, size: (u16, u16)) {
+        self.0.set_size(size)
+    }
 }
