@@ -38,14 +38,35 @@ impl Window {
         self.0.poll_events()
     }
 
+    /// Sets the position of the outer top-left of the window, including any decorations it may have.
+    /// 
+    /// The position is measured in pixels relative to the top-left of the user's desktop, across all monitors.
+    /// 
+    /// This function does not complete immediately - it simply sends a request to the operating system. The operating
+    /// system may or may not choose to honour your request. If it does honour the request, it is guaranteed to have
+    /// completed by the next time `poll_events()` returns after being called for this window, and the resulting set of
+    /// events will contain a `Move` event if the window was moved as a result of calling this function.
     pub fn set_position(&self, position: (i16, i16)) {
         self.0.set_position(position)
     }
 
+    /// Sets the size, in pixels, of the inner drawable area of the window.
+    /// 
+    /// This function does not complete immediately - it simply sends a request to the operating system. The operating
+    /// system may or may not choose to honour your request. If it does honour the request, it is guaranteed to have
+    /// completed by the next time `poll_events()` returns after being called for this window, and the resulting set of
+    /// events will contain a `Resize` event if the window was resized as a result of calling this function.
     pub fn set_size(&self, size: (u16, u16)) {
         self.0.set_size(size)
     }
 
+    /// Sets whether the window is visible on the user's screen and in any taskbars.
+    /// 
+    /// This function does not complete immediately - it simply sends a request to the operating system. The operating
+    /// system may or may not choose to honour your request. If it does honour the request, it is guaranteed to have
+    /// completed by the next time `poll_events()` returns after being called for this window, and the resulting set of
+    /// events will contain a `Visibility` event if the window's visibility changed' as a result of calling this
+    /// function.
     pub fn set_visible(&self, visible: bool) {
         self.0.set_visible(visible)
     }
