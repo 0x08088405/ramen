@@ -44,6 +44,9 @@ pub fn f(connection: Connection) {
                 Event::Focus(b) => {
                     println!("Window focus state: {}", b);
                 },
+                Event::Move(t) => {
+                    println!("Window move: {:?}", t);
+                },
                 Event::Resize(t) => {
                     println!("Window resize: {:?}", t);
                 },

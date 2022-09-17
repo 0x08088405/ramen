@@ -11,6 +11,8 @@ pub enum Event {
     /// The window focus state has been updated (`true` if focused).
     Focus(bool),
 
+    Move((i16, i16)),
+
     /// The window was resized.
     Resize((u16, u16)),
 

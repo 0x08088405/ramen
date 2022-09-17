@@ -45,4 +45,8 @@ impl Window {
     pub fn set_size(&self, size: (u16, u16)) {
         self.0.set_size(size)
     }
+
+    pub fn set_visible(&self, visible: bool) {
+        self.0.set_visible(visible)
+    }
 }

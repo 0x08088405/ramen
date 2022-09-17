@@ -9,7 +9,7 @@ use crate::{
     error::Error,
     event::Event,
     util::{sync::{self, Condvar, Mutex}, LazyCell},
-    window,
+    window::{self, Style},
 };
 
 #[cfg(feature = "input")]
@@ -27,6 +27,7 @@ const BASE_DPI: UINT = 120;
 /// Custom window message
 const RAMEN_WM_CREATE: UINT = WM_USER + 0;
 const RAMEN_WM_DROP: UINT = WM_USER + 1;
+const RAMEN_WM_SETVISIBLE: UINT = WM_USER + 2;
 
 /// Checks the current Windows version (see usage in `Win32State`)
 unsafe fn is_windows_ver_or_greater(dl: &Win32DL, major: WORD, minor: WORD, sp_major: WORD) -> bool {
@@ -393,6 +394,7 @@ struct WindowState {
     event_frontbuf: Vec<Event>,
     event_sync: Mutex<()>,
     mouse_tracked: bool,
+    style: Style,
 }
 
 unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
@@ -413,6 +415,7 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
         event_frontbuf: Vec::new(),
         event_sync: Mutex::new(()),
         mouse_tracked: false,
+        style: builder.style,
     }));
 
     let create_params = WindowCreateParams {
@@ -488,6 +491,13 @@ impl Window {
     pub(crate) fn set_size(&self, (w, h): (u16, u16)) {
         unsafe {
             let _ = SetWindowPos(self.hwnd, ptr::null_mut(), 0, 0, w as _, h as _, SWP_NOMOVE);
+        }
+    }
+
+    pub(crate) fn set_visible(&self, visible: bool) {
+        unsafe {
+            let _ = ShowWindow(self.hwnd, if visible { SW_SHOW } else { SW_HIDE });
+            let _ = PostMessageW(self.hwnd, RAMEN_WM_SETVISIBLE, visible as _, 0);
         }
     }
 }
@@ -838,7 +848,13 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
         WM_DESTROY => 0,
 
         // TODO
-        WM_MOVE => DefWindowProcW(hwnd, msg, wparam, lparam),
+        WM_MOVE => {
+            let x = lparam & 0xFFFF;
+            let y = (lparam >> 16) & 0xFFFF;
+            let state = &mut *user_state(hwnd);
+            state.dispatch_event(Event::Move((x as _, y as _)));
+            0
+        },
 
         // << Event 0x0004 is not known to exist. >>
 
@@ -1079,6 +1095,16 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
         // Return 0.
         RAMEN_WM_DROP => {
             let _ = DestroyWindow(hwnd);
+            0
+        },
+
+        RAMEN_WM_SETVISIBLE => {
+            let state = &mut *user_state(hwnd);
+            state.style.visible = wparam != 0;
+            let (dw_style, dw_style_ex) = style_to_bits(&state.style);
+            let _ = set_instance_storage(hwnd, GWL_STYLE, dw_style as _);
+            let _ = set_instance_storage(hwnd, GWL_EXSTYLE, dw_style_ex as _);
+            // doing this with SWP is really buggy fsr
             0
         },
 
