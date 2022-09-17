@@ -266,6 +266,7 @@ struct WindowState {
     event_backbuf: Vec<Event>,
     event_frontbuf: Vec<Event>,
     event_sync: Mutex<()>,
+    mouse_tracked: bool,
 }
 
 unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
@@ -283,6 +284,7 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
         event_backbuf: Vec::new(),
         event_frontbuf: Vec::new(),
         event_sync: Mutex::new(()),
+        mouse_tracked: false,
     }));
 
     let create_params = WindowCreateParams {
@@ -870,7 +872,28 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
                 let state = &mut *user_state(hwnd);
                 let x = lparam & 0xFFFF;
                 let y = (lparam >> 16) & 0xFFFF;
+                if !state.mouse_tracked {
+                    state.mouse_tracked = true;
+                    state.dispatch_event(Event::MouseEnter);
+                    let mut tme = TRACKMOUSEEVENT {
+                        cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as _,
+                        dwFlags: TME_LEAVE,
+                        hwndTrack: hwnd,
+                        dwHoverTime: 0,
+                    };
+                    let res = TrackMouseEvent(&mut tme);
+                }
                 state.dispatch_event(Event::MouseMove((x as _, y as _)));
+            }
+            0
+        },
+
+        WM_MOUSELEAVE => {
+            #[cfg(feature = "input")]
+            {
+                let state = &mut *user_state(hwnd);
+                state.mouse_tracked = false;
+                state.dispatch_event(Event::MouseLeave);
             }
             0
         },

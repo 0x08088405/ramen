@@ -363,6 +363,7 @@ pub(crate) const WM_SYSKEYDOWN: UINT = 0x0104;
 pub(crate) const WM_SYSKEYUP: UINT = 0x0105;
 pub(crate) const WM_SYSCOMMAND: UINT = 0x0112;
 pub(crate) const WM_MOUSEMOVE: UINT = 0x0200;
+pub(crate) const WM_MOUSELEAVE: UINT = 0x02A3;
 pub(crate) const WM_LBUTTONDOWN: UINT = 0x0201;
 pub(crate) const WM_LBUTTONUP: UINT = 0x0202;
 pub(crate) const WM_RBUTTONDOWN: UINT = 0x0204;
@@ -405,6 +406,7 @@ pub(crate) const WS_VISIBLE: DWORD = 0x10000000;
 pub(crate) const WS_VSCROLL: DWORD = 0x00200000;
 pub(crate) const XBUTTON1: WORD = 0x0001;
 pub(crate) const XBUTTON2: WORD = 0x0002;
+pub(crate) const TME_LEAVE: DWORD = 2;
 
 // Structs
 #[repr(C)]
@@ -421,6 +423,14 @@ pub(crate) struct CREATESTRUCTW {
     pub(crate) lpszName: *const WCHAR,
     pub(crate) lpszClass: *const WCHAR,
     pub(crate) dwExStyle: DWORD,
+}
+
+#[repr(C)]
+pub(crate) struct TRACKMOUSEEVENT {
+    pub(crate) cbSize: DWORD,
+    pub(crate) dwFlags: DWORD,
+    pub(crate) hwndTrack: HWND,
+    pub(crate) dwHoverTime: DWORD,
 }
     
 #[repr(C)]
@@ -585,6 +595,8 @@ extern "system" {
     ) -> BOOL;
     pub(crate) fn WindowFromPoint(Point: POINT) -> HWND;
     pub(crate) fn DestroyWindow(hWnd: HWND) -> BOOL;
+
+    pub(crate) fn TrackMouseEvent(x: *mut TRACKMOUSEEVENT) -> BOOL;
 
     // Hooking API
     pub(crate) fn CallNextHookEx(hhk: HHOOK, nCode: c_int, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
