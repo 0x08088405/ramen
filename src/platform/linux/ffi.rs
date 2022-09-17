@@ -51,6 +51,12 @@ load! {
             value_mask: u32,
             value_list: *const u32,
         ) -> c_uint;
+        fn xcb_configure_window(
+            c: *mut xcb_connection_t,
+            window: xcb_window_t,
+            value_mask: u16,
+            value_list: *const c_void,
+        ) -> c_uint;
         fn xcb_change_property(
             c: *mut xcb_connection_t,
             mode: u8,
@@ -61,7 +67,8 @@ load! {
             data_len: u32,
             data: *const c_void,
         ) -> c_uint;
-        fn xcb_map_window_checked(c: *mut xcb_connection_t, window: xcb_window_t) -> c_uint;
+        fn xcb_map_window(c: *mut xcb_connection_t, window: xcb_window_t) -> c_uint;
+        fn xcb_unmap_window(c: *mut xcb_connection_t, window: xcb_window_t) -> c_uint;
         fn xcb_intern_atom(
             c: *mut xcb_connection_t,
             only_if_exists: u8,

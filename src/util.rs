@@ -98,6 +98,7 @@ unsafe impl<T, F> Send for LazyCell<T, F> where T: Send {}
 unsafe impl<T, F> Sync for LazyCell<T, F> where T: Sync {}
 
 impl<T, F> LazyCell<T, F> {
+    #[allow(dead_code)]
     pub(crate) const fn new(init: F) -> Self {
         Self {
             init: UnsafeCell::new(Some(init)),

@@ -1,5 +1,5 @@
 // TODO: I suppose we'll need some method of deciding at runtime whether to use x11 or wayland? This is just x11
-use crate::{error::Error, event::{CloseReason, Event}, util::sync::mutex_lock, connection, window};
+use crate::{error::Error, event::Event, util::sync::mutex_lock, connection, window};
 use super::ffi::*;
 
 use std::collections::HashMap;
@@ -220,8 +220,8 @@ impl Window {
             let hostname = connection.hostname.as_ref();
 
             // TODO: copy these from the builder when they're in there
-            let (x, y) = (0, 0);
-            let (width, height) = (800, 608);
+            let (x, y) = builder.position.unwrap_or((0, 0));
+            let (width, height) = builder.size;
 
             // Generate an ID for our new window
             let xid = xcb_generate_id(c);
@@ -384,13 +384,9 @@ impl Window {
                 );
             }
 
-            // Try to map window to screen
-            let map_error = xcb_request_check(c, xcb_map_window_checked(c, xid));
-            if !map_error.is_null() {
-                // Can only fail due to "Window" error, so I think this is unreachable in practice
-                free(map_error.cast());
-                Connection::check(c)?;
-                return Err(Error::Unknown)
+            // Map window to screen
+            if builder.style.visible {
+                let _ = xcb_map_window(c, xid);
             }
 
             // Now we'll insert an entry into the EVENT_QUEUE hashmap for this window we've created.
@@ -448,6 +444,9 @@ impl Window {
                 queue.clear();
             }
 
+            // Deliver stuff (polling won't flush out)
+            let _ = xcb_flush(c);
+
             // Call `poll_event` once, which populates XCB's internal linked list from the connection
             let event = xcb_poll_for_event(c);
             if !event.is_null() {
@@ -470,6 +469,37 @@ impl Window {
                         queue.push(event);
                     }
                 }
+            }
+        }
+    }
+
+    pub(crate) fn set_position(&self, (x, y): (i16, i16)) {
+        let mut connection_ = mutex_lock(&self.connection.0);
+        let connection = &mut connection_;
+        // TODO how does negative stuff interact here with xcb? how is it MEANT TO?
+        let xy = [x as u32, y as u32];
+        unsafe {
+            _ = xcb_configure_window(connection.details.connection, self.details.handle, 1|2, xy.as_ptr().cast());
+        }
+    }
+
+    pub(crate) fn set_size(&self, (width, height): (u16, u16)) {
+        let mut connection_ = mutex_lock(&self.connection.0);
+        let connection = &mut connection_;
+        let wh = [width as u32, height as u32];
+        unsafe {
+            _ = xcb_configure_window(connection.details.connection, self.details.handle, 4|8, wh.as_ptr().cast());
+        }
+    }
+
+    pub(crate) fn set_visible(&self, visible: bool) {
+        let mut connection_ = mutex_lock(&self.connection.0);
+        let connection = &mut connection_;
+        unsafe {
+            if visible {
+                _ = xcb_map_window(connection.details.connection, self.details.handle);
+            } else {
+                _ = xcb_unmap_window(connection.details.connection, self.details.handle);
             }
         }
     }
