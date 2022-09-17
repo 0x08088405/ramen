@@ -111,6 +111,10 @@ impl Builder {
     /// Sets the position of the top-left of the window on the screen. If `None`, the operating system will decide
     /// where to place the window.
     /// 
+    /// While it is necessary to pass a position to the X11 backend, it is unlikely to be used, since almost every
+    /// X11-based Window Manager will ignore this and use its own positioning logic. If the Window Manager places
+    /// the window in a different place, you will receive a `Move` event.
+    /// 
     /// Defaults to `None`.
     pub fn position(mut self, position: Option<(i16, i16)>) -> Self {
         self.position = position;
