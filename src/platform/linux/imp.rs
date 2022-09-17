@@ -575,7 +575,7 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
             let wh = (event.width, event.height);
             if window.position != xy {
                 window.position = xy;
-                // Put a movement event here?
+                window.event_buffer.push(Event::Move(xy));
             }
             if window.size != wh {
                 window.size = wh;
