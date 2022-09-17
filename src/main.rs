@@ -9,16 +9,16 @@ pub fn main() {
         },
     };
 
-    //f(c);
+    f(c);
 
-    let cs = [c.clone(), c.clone(), c.clone(), c.clone(), c.clone()];
-    let t = cs.map(|c| std::thread::spawn(move || f(c)));
-    for x in t {
-        if x.join().is_err() {
-            eprintln!("Exiting main thread because join() failed");
-            return;
-        }
-    }
+    // let cs = [c.clone(), c.clone(), c.clone(), c.clone(), c.clone()];
+    // let t = cs.map(|c| std::thread::spawn(move || f(c)));
+    // for x in t {
+    //     if x.join().is_err() {
+    //         eprintln!("Exiting main thread because join() failed");
+    //         return;
+    //     }
+    // }
 }
 
 pub fn f(connection: Connection) {
@@ -71,6 +71,10 @@ pub fn f(connection: Connection) {
                 Event::Input(code) => {
                     println!("Input: {}", code);
                 },
+                #[cfg(feature = "input")]
+                Event::MouseEnter => println!("!! Mouse enter"),
+                #[cfg(feature = "input")]
+                Event::MouseLeave => println!("!! Mouse leave"),
                 _ => (),
             }
         }
