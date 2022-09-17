@@ -100,9 +100,7 @@ impl Builder {
 
     /// Sets whether the window should begin maximised on the user's monitor.
     /// 
-    /// If the user has multiple monitors, which monitor it will be maximised on depends on what has been passed to
-    /// `position()` before this call. If `position()` is left as default, the window will usually appear on the
-    /// primary monitor. The behaviour of `position()` and `size()` after calling `maximised(true)` is undefined.
+    /// If the user has multiple monitors, the primary monitor will usually be selected.
     /// 
     /// Defaults to `false`.
     pub fn maximised(mut self, maximised: bool) -> Self {
