@@ -881,7 +881,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
                         hwndTrack: hwnd,
                         dwHoverTime: 0,
                     };
-                    let res = TrackMouseEvent(&mut tme);
+                    let _ = TrackMouseEvent(&mut tme);
                 }
                 state.dispatch_event(Event::MouseMove((x as _, y as _)));
             }
