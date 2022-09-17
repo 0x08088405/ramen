@@ -64,6 +64,10 @@ impl Window {
         self.0.set_size(size)
     }
 
+    pub fn set_title(&self, title: &str) {
+        self.0.set_title(title)
+    }
+
     /// Sets whether the window is visible on the user's screen and in any taskbars.
     /// 
     /// This function does not complete immediately - it simply sends a request to the operating system. The operating

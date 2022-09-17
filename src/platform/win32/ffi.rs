@@ -565,7 +565,7 @@ extern "system" {
     // Window class management
     pub(crate) fn GetClassInfoExW(hinst: HINSTANCE, lpszClass: *const WCHAR, lpwcx: *mut WNDCLASSEXW) -> BOOL;
     pub(crate) fn RegisterClassExW(lpWndClass: *const WNDCLASSEXW) -> ATOM;
-
+    pub(crate) fn SetWindowTextW(hWnd: HWND, lpString: *const WCHAR) -> BOOL;
     // Window management
     pub(crate) fn CreateWindowExW(
         dwExStyle: DWORD,

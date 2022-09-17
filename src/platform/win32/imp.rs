@@ -500,6 +500,14 @@ impl Window {
         }
     }
 
+    pub(crate) fn set_title(&self, title: &str) {
+        unsafe {
+            let mut name_wstr = Vec::<WCHAR>::new();
+            let name = str_to_wstr(title, name_wstr.as_mut()).unwrap();
+            let _ = SetWindowTextW(self.hwnd, name);
+        }
+    }
+
     pub(crate) fn set_position(&self, (x, y): (i16, i16)) {
         unsafe {
             let state = &*self.state.get();
