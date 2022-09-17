@@ -963,6 +963,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             // `lpCreateParams` is the first field, so `CREATESTRUCTW *` is `WindowCreateParams **`
             let params = &**(lparam as *const *const WindowCreateParams);
             let _ = set_instance_storage(hwnd, GWL_USERDATA, params.state as usize);
+            // TODO: add enablenonclientareadpiscaling here for pmv1 >win10 xxxx
             DefWindowProcW(hwnd, msg, wparam, lparam)
         },
 
