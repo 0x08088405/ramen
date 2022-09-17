@@ -33,8 +33,8 @@ pub fn f(connection: Connection) {
         window.poll_events();
         for event in window.events() {
             match event {
-                Event::CloseRequest(c) => {
-                    println!("Closed with close reason {:?}", c);
+                Event::CloseRequest => {
+                    println!("Closed.");
                     break 'program;
                 },
                 Event::Focus(b) => {

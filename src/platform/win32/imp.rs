@@ -7,7 +7,7 @@ use super::ffi::*;
 use crate::{
     connection,
     error::Error,
-    event::{CloseReason, Event},
+    event::Event,
     util::{sync::{self, Condvar, Mutex}, LazyCell},
     window,
 };
@@ -389,7 +389,6 @@ struct WindowCreateParams {
 
 /// Volatile state which the `Window` and its thread both have a pointer to.
 struct WindowState {
-    close_reason: Option<CloseReason>,
     event_backbuf: Vec<Event>,
     event_frontbuf: Vec<Event>,
     event_sync: Mutex<()>,
@@ -410,7 +409,6 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
     let (width, height) = adjust_window_for_dpi(WIN32.get(), builder.size, dw_style, dw_style_ex, dpi);
     let (pos_x, pos_y) = (CW_USEDEFAULT, CW_USEDEFAULT);
     let window_state = Box::new(UnsafeCell::new(WindowState {
-        close_reason: None,
         event_backbuf: Vec::new(),
         event_frontbuf: Vec::new(),
         event_sync: Mutex::new(()),
@@ -900,8 +898,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
         // Received when a window is requested to close. Return 0.
         WM_CLOSE => {
             let state = &mut *user_state(hwnd);
-            let reason = state.close_reason.take().unwrap_or(CloseReason::Unknown);
-            state.dispatch_event(Event::CloseRequest(reason));
+            state.dispatch_event(Event::CloseRequest);
             0
         },
 
@@ -926,12 +923,11 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
 
         // Same as `WM_KEYDOWN` & `WM_KEYUP` but with a few horrific bitfield quirks.
         WM_SYSKEYDOWN | WM_SYSKEYUP => {
-            let mut state = &mut *user_state(hwnd);
+            let state = &mut *user_state(hwnd);
 
             // As a side-effect of handling "system keys", we actually override Alt+F4.
             // It's re-implemented here, because it's usually expected that Alt+F4 does something.
             if wparam & 0xFF == VK_F4 as WPARAM && lparam & (1 << 29) != 0 {
-                state.close_reason = Some(CloseReason::KeyboardShortcut);
                 let _ = SendMessageW(hwnd, WM_CLOSE, 0, 0);
             }
 
@@ -953,17 +949,6 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             }
 
             0
-        },
-
-        // Received when the user clicks a window menu control (formerly "system menu").
-        // wParam: Command enum.
-        // lParam: Mouse position.
-        // Return 0.
-        WM_SYSCOMMAND => {
-            if wparam == SC_CLOSE {
-                (*user_state(hwnd)).close_reason = Some(CloseReason::SystemMenu);
-            }
-            DefWindowProcW(hwnd, msg, wparam, lparam)
         },
 
         WM_CHAR => {

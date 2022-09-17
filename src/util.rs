@@ -4,7 +4,7 @@
 use std::{
     cell::UnsafeCell,
     ops::Deref, ptr,
-    sync::{Once},
+    sync::Once,
 };
 
 
@@ -85,7 +85,7 @@ macro_rules! load {
 /// Minimal lazily initialized type, similar to the one in `once_cell`.
 ///
 /// Thread safe initialization, immutable-only access.
-pub struct LazyCell<T, F = fn() -> T> {
+pub(crate) struct LazyCell<T, F = fn() -> T> {
     // Invariant: Written to at most once on first access.
     init: UnsafeCell<Option<F>>,
     ptr: UnsafeCell<*const T>,
@@ -98,7 +98,7 @@ unsafe impl<T, F> Send for LazyCell<T, F> where T: Send {}
 unsafe impl<T, F> Sync for LazyCell<T, F> where T: Sync {}
 
 impl<T, F> LazyCell<T, F> {
-    pub const fn new(init: F) -> Self {
+    pub(crate) const fn new(init: F) -> Self {
         Self {
             init: UnsafeCell::new(Some(init)),
             ptr: UnsafeCell::new(ptr::null()),
@@ -108,7 +108,7 @@ impl<T, F> LazyCell<T, F> {
 }
 
 impl<T, F: FnOnce() -> T> LazyCell<T, F> {
-    pub fn get(&self) -> &T {
+    pub(crate) fn get(&self) -> &T {
         self.once.call_once(|| unsafe {
             if let Some(f) = (&mut *self.init.get()).take() {
                 let pointer = Box::into_raw(Box::new(f()));

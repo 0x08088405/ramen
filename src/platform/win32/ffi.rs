@@ -726,17 +726,17 @@ pub(crate) unsafe fn set_instance_storage(hwnd: HWND, offset: c_int, data: usize
 
 #[repr(C)]
 pub(crate) struct OSVERSIONINFOEXW {
-    pub dwOSVersionInfoSize: DWORD,
-    pub dwMajorVersion: DWORD,
-    pub dwMinorVersion: DWORD,
-    pub dwBuildNumber: DWORD,
-    pub dwPlatformId: DWORD,
-    pub szCSDVersion: [WCHAR; 128],
-    pub wServicePackMajor: WORD,
-    pub wServicePackMinor: WORD,
-    pub wSuiteMask: WORD,
-    pub wProductType: BYTE,
-    pub wReserved: BYTE,
+    pub(crate) dwOSVersionInfoSize: DWORD,
+    pub(crate) dwMajorVersion: DWORD,
+    pub(crate) dwMinorVersion: DWORD,
+    pub(crate) dwBuildNumber: DWORD,
+    pub(crate) dwPlatformId: DWORD,
+    pub(crate) szCSDVersion: [WCHAR; 128],
+    pub(crate) wServicePackMajor: WORD,
+    pub(crate) wServicePackMinor: WORD,
+    pub(crate) wSuiteMask: WORD,
+    pub(crate) wProductType: BYTE,
+    pub(crate) wReserved: BYTE,
 }
 
 
@@ -754,7 +754,7 @@ macro_rules! dyn_link {
         }
     ) => {
         $(#[$outer])*
-        pub struct $s_ident {
+        pub(crate) struct $s_ident {
             $($(
                 $(#[$fn_outer])*
                 $sym_fn : ::std::option::Option<
@@ -888,7 +888,7 @@ dyn_link! {
 }
 
 impl Win32DL {
-    pub unsafe fn link() -> Self {
+    pub(crate) unsafe fn link() -> Self {
         // Trying to load a nonexistent dynamic library or symbol sets the thread-global error.
         // Since this is intended and acceptable for missing functions, we restore the error state.
 
