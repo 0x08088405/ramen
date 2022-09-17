@@ -78,6 +78,7 @@ pub fn f(connection: Connection) {
                 #[cfg(feature = "input")]
                 Event::MouseUp(k) => {
                     println!("Mouse up: {:?}", k);
+                    window.set_position((100, 100));
                 },
                 #[cfg(feature = "input")]
                 Event::MouseMove(t) => {

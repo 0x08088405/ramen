@@ -127,7 +127,7 @@ unsafe fn adjust_window_for_dpi(
     style: DWORD,
     style_ex: DWORD,
     dpi: UINT,
-) -> (LONG, LONG) {
+) -> ((LONG, LONG), RECT) {
     let mut window = RECT { left: 0, top: 0, right: width as LONG, bottom: height as LONG };
     if match win32.dpi_mode {
         // Non-client area DPI scaling is enabled in PMv1 Win10 1607+ and PMv2 (any).
@@ -141,7 +141,7 @@ unsafe fn adjust_window_for_dpi(
         // TODO: This *is* correct for old PMv1, right? How does broken NC scaling work?
         let _ = AdjustWindowRectEx(&mut window, style, FALSE, style_ex);
     }
-    rect_to_size2d(&window)
+    (rect_to_size2d(&window), window)
 }
 
 #[inline]
@@ -411,7 +411,7 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
     let style = builder.style;
     let (dw_style, dw_style_ex) = style_to_bits(&style);
     let dpi = BASE_DPI; // TODO: lol!
-    let (width, height) = adjust_window_for_dpi(WIN32.get(), builder.size, dw_style, dw_style_ex, dpi);
+    let ((width, height), _) = adjust_window_for_dpi(WIN32.get(), builder.size, dw_style, dw_style_ex, dpi);
     let (pos_x, pos_y) = builder.position.map(|(x, y)| (x as _, y as _)).unwrap_or((CW_USEDEFAULT, CW_USEDEFAULT));
     let window_state = Box::new(UnsafeCell::new(WindowState {
         event_backbuf: Vec::new(),
@@ -493,7 +493,12 @@ impl Window {
 
     pub(crate) fn set_position(&self, (x, y): (i16, i16)) {
         unsafe {
-            let _ = SetWindowPos(self.hwnd, ptr::null_mut(), x as _, y as _, 0, 0, SWP_NOSIZE);
+            let state = &*self.state.get();
+            let (dw_style, dw_style_ex) = style_to_bits(&state.style);
+            let (_, RECT { top, left, .. }) = adjust_window_for_dpi(WIN32.get(), (0, 0), dw_style, dw_style_ex, state.dpi);
+            let xx = x + left as i16;
+            let yy = y + top as i16;
+            let _ = SetWindowPos(self.hwnd, ptr::null_mut(), xx as _, yy as _, 0, 0, SWP_NOSIZE);
         }
     }
 
@@ -501,7 +506,7 @@ impl Window {
         unsafe {
             let state = &*self.state.get();
             let (dw_style, dw_style_ex) = style_to_bits(&state.style);
-            let (width, height) = adjust_window_for_dpi(WIN32.get(), (w, h), dw_style, dw_style_ex, state.dpi);
+            let ((width, height), _) = adjust_window_for_dpi(WIN32.get(), (w, h), dw_style, dw_style_ex, state.dpi);
             let _ = SetWindowPos(self.hwnd, ptr::null_mut(), 0, 0, width as _, height as _, SWP_NOMOVE);
         }
     }
