@@ -943,6 +943,13 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             0
         },
 
+        WM_SHOWWINDOW => {
+            if lparam == 0 {
+                (*user_state(hwnd)).dispatch_event(Event::Visible(wparam != 0));
+            }
+            0
+        },
+
         WM_PAINT => {
             // windows will not stop spamming this event until you process it like this
             // we don't actually draw anything, of course
