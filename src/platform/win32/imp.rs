@@ -491,6 +491,15 @@ impl Window {
         }
     }
 
+    pub(crate) fn set_maximised(&self, maximised: bool) {
+        unsafe {
+            let state = &*self.state.get();
+            if state.is_max != maximised {
+                let _ = ShowWindow(self.hwnd, if maximised {3} else {1});
+            }
+        }
+    }
+
     pub(crate) fn set_position(&self, (x, y): (i16, i16)) {
         unsafe {
             let state = &*self.state.get();
