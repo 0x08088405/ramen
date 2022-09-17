@@ -25,6 +25,9 @@ pub enum Event {
     /// The window was resized. The width and height are reported in pixels.
     Resize((u16, u16)),
 
+    /// The window's visibility has changed.
+    Visible(bool),
+
     /// A [`Key`] was pressed.
     /// 
     /// This event will tell you which physical key the user has pressed. If your aim is to process text input,
