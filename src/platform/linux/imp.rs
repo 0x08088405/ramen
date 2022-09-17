@@ -520,7 +520,7 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
             let event = &mut *(ev as *mut xcb_client_message_event_t);
             if event.r#type == details.atoms.wm_protocols && event.format == 32 {
                 if event.client_data.data32[0] == details.atoms.wm_delete_window {
-                    window.event_buffer.push(Event::CloseRequest(CloseReason::SystemMenu))
+                    window.event_buffer.push(Event::CloseRequest)
                 } else if event.client_data.data32[0] == details.atoms._net_wm_ping {
                     // data32[2] contains the window xid, that might be useful for something?
                     event.window = (*details.screen).root;
