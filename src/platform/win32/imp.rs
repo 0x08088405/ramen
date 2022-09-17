@@ -8,7 +8,7 @@ use crate::{
     connection,
     error::Error,
     event::{CloseReason, Event},
-    util::{sync::{self, Condvar, Mutex}},
+    util::{sync::{self, Condvar, Mutex}, LazyCell},
     window,
 };
 
@@ -17,9 +17,136 @@ use crate::input::{Key, MouseButton};
 
 use std::{cell::UnsafeCell, mem, ptr};
 
+/// TODO: yeah
+/// 
+/// 
+// Global immutable struct containing dynamically acquired API state
+static WIN32: LazyCell<Win32State> = LazyCell::new(Win32State::new);
+
+const BASE_DPI: UINT = 120;
 /// Custom window message
 const RAMEN_WM_CREATE: UINT = WM_USER + 0;
 const RAMEN_WM_DROP: UINT = WM_USER + 1;
+
+/// Checks the current Windows version (see usage in `Win32State`)
+unsafe fn is_windows_ver_or_greater(dl: &Win32DL, major: WORD, minor: WORD, sp_major: WORD) -> bool {
+    let mut osvi: OSVERSIONINFOEXW = mem::zeroed();
+    osvi.dwOSVersionInfoSize = mem::size_of_val(&osvi) as DWORD;
+    osvi.dwMajorVersion = major.into();
+    osvi.dwMinorVersion = minor.into();
+    osvi.wServicePackMajor = sp_major;
+
+    let mask = VER_MAJORVERSION | VER_MINORVERSION | VER_SERVICEPACKMAJOR;
+    let mut cond = VerSetConditionMask(0, VER_MAJORVERSION, VER_GREATER_EQUAL);
+    cond = VerSetConditionMask(cond, VER_MINORVERSION, VER_GREATER_EQUAL);
+    cond = VerSetConditionMask(cond, VER_SERVICEPACKMAJOR, VER_GREATER_EQUAL);
+
+    dl.RtlVerifyVersionInfo(&mut osvi, mask, cond) == Some(0)
+}
+
+/// Checks a specific Windows 10 update level (see usage in `Win32State`)
+unsafe fn is_win10_ver_or_greater(dl: &Win32DL, build: WORD) -> bool {
+    let mut osvi: OSVERSIONINFOEXW = mem::zeroed();
+    osvi.dwOSVersionInfoSize = mem::size_of_val(&osvi) as DWORD;
+    osvi.dwMajorVersion = 10;
+    osvi.dwMinorVersion = 0;
+    osvi.dwBuildNumber = build.into();
+
+    let mask = VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER;
+    let mut cond = VerSetConditionMask(0, VER_MAJORVERSION, VER_GREATER_EQUAL);
+    cond = VerSetConditionMask(cond, VER_MINORVERSION, VER_GREATER_EQUAL);
+    cond = VerSetConditionMask(cond, VER_BUILDNUMBER, VER_GREATER_EQUAL);
+
+    dl.RtlVerifyVersionInfo(&mut osvi, mask, cond) == Some(0)
+}
+
+struct Win32State {
+    /// Whether the system is at least on Windows 10 1607 (build 14393 - "Anniversary Update").
+    at_least_anniversary_update: bool,
+
+    /// The DPI mode that's enabled process-wide. The newest available is selected.
+    /// MSDN recommends setting this with the manifest but that's rather unpleasant.
+    /// Instead, it's set dynamically at runtime when this struct is instanced.
+    dpi_mode: Win32DpiMode,
+
+    /// Dynamically linked Win32 functions that might not be available on all systems.
+    dl: Win32DL,
+}
+
+enum Win32DpiMode {
+    Unsupported,
+    System,
+    PerMonitorV1,
+    PerMonitorV2,
+}
+
+impl Win32State {
+    fn new() -> Self {
+        const VISTA_MAJ: WORD = (_WIN32_WINNT_VISTA >> 8) & 0xFF;
+        const VISTA_MIN: WORD = _WIN32_WINNT_VISTA & 0xFF;
+        const W81_MAJ: WORD = (_WIN32_WINNT_WINBLUE >> 8) & 0xFF;
+        const W81_MIN: WORD = _WIN32_WINNT_WINBLUE & 0xFF;
+
+        unsafe {
+            let dl = Win32DL::link();
+
+            let at_least_vista = is_windows_ver_or_greater(&dl, VISTA_MAJ, VISTA_MIN, 0);
+            let at_least_8_point_1 = is_windows_ver_or_greater(&dl, W81_MAJ, W81_MIN, 0);
+            let at_least_anniversary_update = is_win10_ver_or_greater(&dl, 14393);
+            let at_least_creators_update = is_win10_ver_or_greater(&dl, 15063);
+
+            let dpi_mode = if at_least_creators_update {
+                let _ = dl.SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+                Win32DpiMode::PerMonitorV2
+            } else if at_least_8_point_1 {
+                let _ = dl.SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
+                Win32DpiMode::PerMonitorV1
+            } else if at_least_vista {
+                let _ = dl.SetProcessDPIAware();
+                Win32DpiMode::System
+            } else {
+                Win32DpiMode::Unsupported
+            };
+
+            Self {
+                at_least_anniversary_update,
+                dpi_mode,
+                dl,
+            }
+        }
+    }
+}
+
+/// Win32 functions need the full outer size for creation. This function calculates that size from an inner size.
+///
+/// Since for legacy reasons things like drop shadow are part of the bounds, don't use this for reporting outer size.
+unsafe fn adjust_window_for_dpi(
+    win32: &Win32State,
+    (width, height): (u16, u16),
+    style: DWORD,
+    style_ex: DWORD,
+    dpi: UINT,
+) -> (LONG, LONG) {
+    let mut window = RECT { left: 0, top: 0, right: width as LONG, bottom: height as LONG };
+    if match win32.dpi_mode {
+        // Non-client area DPI scaling is enabled in PMv1 Win10 1607+ and PMv2 (any).
+        // For PMv1, this is done with EnableNonClientDpiScaling at WM_NCCREATE.
+        Win32DpiMode::PerMonitorV1 if win32.at_least_anniversary_update => true,
+        Win32DpiMode::PerMonitorV2 => true,
+        _ => false,
+    } {
+        let _ = win32.dl.AdjustWindowRectExForDpi(&mut window, style, FALSE, style_ex, dpi);
+    } else {
+        // TODO: This *is* correct for old PMv1, right? How does broken NC scaling work?
+        let _ = AdjustWindowRectEx(&mut window, style, FALSE, style_ex);
+    }
+    rect_to_size2d(&window)
+}
+
+#[inline]
+fn rect_to_size2d(rect: &RECT) -> (LONG, LONG) {
+    (rect.right - rect.left, rect.bottom - rect.top)
+}
 
 pub(crate) struct Connection {
     id: DWORD,
@@ -279,6 +406,9 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
 
     let style = builder.style;
     let (dw_style, dw_style_ex) = style_to_bits(&style);
+    let dpi = BASE_DPI; // TODO: lol!
+    let (width, height) = adjust_window_for_dpi(WIN32.get(), builder.size, dw_style, dw_style_ex, dpi);
+    let (pos_x, pos_y) = (CW_USEDEFAULT, CW_USEDEFAULT);
     let window_state = Box::new(UnsafeCell::new(WindowState {
         close_reason: None,
         event_backbuf: Vec::new(),
@@ -297,10 +427,10 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
             hInstance: base_hinstance(),
             hMenu: ptr::null_mut(),
             hwndParent: ptr::null_mut(),
-            x: 400,
-            y: 400,
-            cx: 800,
-            cy: 608,
+            x: pos_x,
+            y: pos_y,
+            cx: width,
+            cy: height,
             style: dw_style as _,
             lpszName: title_name,
             lpszClass: class_name,

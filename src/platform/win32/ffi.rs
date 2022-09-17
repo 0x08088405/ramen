@@ -49,6 +49,7 @@ opaque! {
     pub(crate) HICON = HICON__,
     pub(crate) HMENU = HMENU__,
     pub(crate) HMODULE = HMODULE__,
+    pub(crate) HMONITOR = HMONITOR__,
 
     /// Opaque handle to a module in memory.
     pub HINSTANCE = HINSTANCE__,
@@ -515,6 +516,7 @@ extern "system" {
     pub(crate) fn SetLastError(dwErrCode: DWORD);
     pub(crate) fn ExitProcess(uExitCode: UINT);
 
+    pub(crate) fn LoadLibraryExA(lpLibFileName: *const CHAR, hFile: HANDLE, dwFlags: DWORD) -> HMODULE;
     // Threading
     pub(crate) fn GetCurrentThreadId() -> DWORD;
 
@@ -719,4 +721,180 @@ pub(crate) unsafe fn set_instance_storage(hwnd: HWND, offset: c_int, data: usize
 #[inline]
 pub(crate) unsafe fn set_instance_storage(hwnd: HWND, offset: c_int, data: usize) -> usize {
     SetWindowLongPtrW(hwnd, offset, data as LONG_PTR) as usize
+}
+
+
+#[repr(C)]
+pub(crate) struct OSVERSIONINFOEXW {
+    pub dwOSVersionInfoSize: DWORD,
+    pub dwMajorVersion: DWORD,
+    pub dwMinorVersion: DWORD,
+    pub dwBuildNumber: DWORD,
+    pub dwPlatformId: DWORD,
+    pub szCSDVersion: [WCHAR; 128],
+    pub wServicePackMajor: WORD,
+    pub wServicePackMinor: WORD,
+    pub wSuiteMask: WORD,
+    pub wProductType: BYTE,
+    pub wReserved: BYTE,
+}
+
+
+/// Generates simple dynamic linkings.
+macro_rules! dyn_link {
+    (
+        $(#[$outer:meta])*
+        $s_vis:vis struct $s_ident:ident($dlopen:expr => $dlopen_ty:ty | $dlsym:expr) {
+            $($($module_name:literal)|+ {
+                $(
+                    $(#[$fn_outer:meta])*
+                    fn $sym_fn:ident($($name:ident : $ty:ty),*$(,)?) -> $ret:ty;
+                )*
+            }),* $(,)?
+        }
+    ) => {
+        $(#[$outer])*
+        pub struct $s_ident {
+            $($(
+                $(#[$fn_outer])*
+                $sym_fn : ::std::option::Option<
+                    unsafe extern "system" fn($($name : $ty ,)*) -> $ret
+                > ,
+            )*)*
+        }
+
+        impl $s_ident {
+            #[allow(unused_doc_comments)]
+            unsafe fn _link() -> Self {
+                let mut inst = ::std::mem::MaybeUninit::<Self>::uninit();
+                let mut inst_ref = &mut *(inst.as_mut_ptr());
+                $(
+                    let mut handle = 0 as $dlopen_ty;
+                    for name in &[$(cstr!($module_name) ,)*] {
+                        handle = $dlopen(*name);
+                        if handle != (0 as $dlopen_ty) {
+                            break
+                        }
+                    }
+                    if handle != (0 as $dlopen_ty) {
+                        $(
+                            $(#[$fn_outer])*
+                            {
+                                inst_ref.$sym_fn =
+                                    ::std::mem::transmute::<_,
+                                        Option<unsafe extern "system" fn($($name : $ty ,)*) -> $ret>>
+                                    ($dlsym(handle, cstr!(stringify!($sym_fn))));
+                            }
+                        )*
+                    } else {
+                        $(
+                            $(#[$fn_outer])*
+                            {
+                                inst_ref.$sym_fn = None;
+                            }
+                        )*
+                    }
+                )*
+                inst.assume_init()
+            }
+            $($(
+                $(#[$fn_outer])*
+                $s_vis unsafe fn $sym_fn(&self, $($name : $ty ,)*) -> ::std::option::Option<$ret> {
+                    self.$sym_fn.map(|f| f($($name ,)*))
+                }
+            )*)*
+        }
+    };
+}
+
+#[inline]
+unsafe fn dlopen(name: *const CHAR) -> HMODULE {
+    // Patch loading mechanism here, if you wish
+    LoadLibraryExA(name, 0 as HANDLE, 0)
+}
+
+dyn_link! {
+    pub(crate) struct Win32DL(dlopen => HMODULE | GetProcAddress) {
+        "Dwmapi.dll" {
+            /// (Windows Vista+)
+            /// Advanced querying of window attributes via the desktop window manager.
+            fn DwmGetWindowAttribute(
+                hWnd: HWND,
+                dwAttribute: DWORD,
+                pvAttribute: *mut c_void,
+                cbAttribute: DWORD,
+            ) -> HRESULT;
+
+            /// (Windows Vista+)
+            /// Advanced setting of window attributes via the desktop window manager.
+            fn DwmSetWindowAttribute(
+                hWnd: HWND,
+                dwAttribute: DWORD,
+                pvAttribute: *const c_void,
+                cbAttribute: DWORD,
+            ) -> HRESULT;
+        },
+
+        "Ntdll.dll" {
+            /// (Win2000+)
+            /// This is used in place of VerifyVersionInfoW, as it's not manifest dependent, and doesn't lie.
+            fn RtlVerifyVersionInfo(
+                VersionInfo: *mut OSVERSIONINFOEXW,
+                TypeMask: DWORD,
+                ConditionMask: c_ulonglong,
+            ) -> NTSTATUS;
+        },
+
+        "Shcore.dll" {
+            /// (Win8.1+)
+            /// The intended way to query a monitor's DPI values since PMv1 and above.
+            fn GetDpiForMonitor(
+                hmonitor: HMONITOR,
+                dpiType: u32,
+                dpiX: *mut UINT,
+                dpiY: *mut UINT,
+            ) -> HRESULT;
+        },
+
+        "User32.dll" {
+            // (Win10 1607+)
+            // It's a version of AdjustWindowRectEx with DPI, but they added it 7 years late.
+            // The DPI parameter accounts for scaled non-client areas, not to scale client areas.
+            fn AdjustWindowRectExForDpi(
+                lpRect: *mut RECT,
+                dwStyle: DWORD,
+                bMenu: BOOL,
+                dwExStyle: DWORD,
+                dpi: UINT,
+            ) -> BOOL;
+
+            /// (Win10 1603+)
+            /// Enables automatic scaling of the non-client area as a hack for PMv1 DPI mode.
+            fn EnableNonClientDpiScaling(hwnd: HWND) -> BOOL;
+
+            /// (Vista+)
+            /// First introduction of DPI awareness, this function enables System-Aware DPI.
+            fn SetProcessDPIAware() -> BOOL;
+
+            /// (Win8.1+)
+            /// Allows you to set either System-Aware DPI mode, or Per-Monitor-Aware (v1).
+            fn SetProcessDpiAwareness(value: PROCESS_DPI_AWARENESS) -> HRESULT;
+
+            /// (Win10 1703+)
+            /// Allows you to set either System-Aware DPI mode, or Per-Monitor-Aware (v1 *or* v2).
+            fn SetProcessDpiAwarenessContext(value: DPI_AWARENESS_CONTEXT) -> BOOL;
+        },
+    }
+}
+
+impl Win32DL {
+    pub unsafe fn link() -> Self {
+        // Trying to load a nonexistent dynamic library or symbol sets the thread-global error.
+        // Since this is intended and acceptable for missing functions, we restore the error state.
+
+        let prev_error = GetLastError();
+        let instance = Self::_link();
+        SetLastError(prev_error);
+        instance
+    }
 }
