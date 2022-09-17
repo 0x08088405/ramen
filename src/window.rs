@@ -28,6 +28,12 @@ impl Window {
     /// Pulls any new events into the buffer, discarding any events which were previously in the buffer.
     /// 
     /// Query the buffer by calling `events()`.
+    /// 
+    /// This function needs to be called regularly to let the operating system know that the application is still
+    /// running and hasn't frozen. If this function isn't called on a window within a reasonable amount of time
+    /// (usually a few seconds), then the operating system may mark it as unresponsive and/or try to kill it.
+    /// 
+    /// Note however that there is no such requirement for calling `events()`.
     pub fn poll_events(&mut self) {
         self.0.poll_events()
     }
