@@ -207,6 +207,7 @@ pub(crate) struct Window {
 pub(crate) struct WindowDetails {
     handle: xcb_window_t,
     event_buffer: Vec<Event>,
+    parent: xcb_window_t,
     position: (i16, i16),
     size: (u16, u16),
 }
@@ -400,12 +401,14 @@ impl Window {
                 return Err(Error::Unknown)
             }
 
+            let root = (*connection.details.screen).root;
             std::mem::drop(connection_mtx);
             Ok(Window {
                 connection: builder.connection,
                 details: WindowDetails {
                     handle: xid,
                     event_buffer: Vec::with_capacity(QUEUE_SIZE),
+                    parent: root,
                     position: (x, y),
                     size: (width, height),
                 },
@@ -523,6 +526,7 @@ unsafe fn get_event_window(ev: *mut xcb_generic_event_t, details: &ConnectionDet
     match (*ev).response_type & !(1 << 7) {
         XCB_CLIENT_MESSAGE => Some((*(ev as *mut xcb_client_message_event_t)).window),
         XCB_FOCUS_IN | XCB_FOCUS_OUT => Some((*(ev as *mut xcb_focus_in_event_t)).event),
+        XCB_REPARENT_NOTIFY => Some((*(ev as *mut xcb_reparent_notify_event_t)).window),
         XCB_CONFIGURE_NOTIFY => Some((*(ev as *mut xcb_configure_notify_event_t)).window),
         #[cfg(feature = "input")]
         XCB_GE_GENERIC => {
@@ -545,6 +549,7 @@ unsafe fn get_event_window(ev: *mut xcb_generic_event_t, details: &ConnectionDet
 
 // This function assumes the given event is destined for the given Window - check first with get_event_window
 unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails, details: &ConnectionDetails) {
+    let is_send_event = ((*ev).response_type >> 7) != 0;
     match (*ev).response_type & !(1 << 7) {
         XCB_CLIENT_MESSAGE => {
             let event = &mut *(ev as *mut xcb_client_message_event_t);
@@ -569,17 +574,40 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
             let state = e == XCB_FOCUS_IN;
             window.event_buffer.push(Event::Focus(state));
         },
+        XCB_REPARENT_NOTIFY => {
+            let event = &*(ev as *mut xcb_reparent_notify_event_t);
+            window.parent = event.parent;
+        },
         XCB_CONFIGURE_NOTIFY => {
             let event = &*(ev as *mut xcb_configure_notify_event_t);
-            let xy = (event.x, event.y);
             let wh = (event.width, event.height);
-            if window.position != xy {
-                window.position = xy;
-                window.event_buffer.push(Event::Move(xy));
-            }
             if window.size != wh {
                 window.size = wh;
                 window.event_buffer.push(Event::Resize(wh));
+            }
+
+            let (mut x, mut y) = (event.x, event.y);
+            if !is_send_event && window.parent != (*details.screen).root {
+                let mut err: *mut xcb_generic_error_t = std::ptr::null_mut();
+                let cookie = xcb_translate_coordinates(details.connection, event.window, (*details.screen).root, 0, 0);
+                let reply = xcb_translate_coordinates_reply(details.connection, cookie, &mut err);
+                if !reply.is_null() {
+                    let r = &*reply;
+                    x = r.dst_x;
+                    y = r.dst_y;
+                    free(reply.cast());
+                } else {
+                    // Errors: Window
+                    if !err.is_null() {
+                        free(err.cast());
+                    }
+                    return;
+                }
+            }
+            let xy = (x, y);
+            if window.position != xy {
+                window.position = xy;
+                window.event_buffer.push(Event::Move(xy));
             }
         },
         #[cfg(feature = "input")]

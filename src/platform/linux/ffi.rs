@@ -67,6 +67,18 @@ load! {
             data_len: u32,
             data: *const c_void,
         ) -> c_uint;
+        fn xcb_translate_coordinates(
+            c: *mut xcb_connection_t,
+            src: xcb_window_t,
+            dest: xcb_window_t,
+            srcx: i16,
+            srcy: i16,
+        ) -> c_uint;
+        fn xcb_translate_coordinates_reply(
+            c: *mut xcb_connection_t,
+            cookie: c_uint,
+            err: *mut *mut xcb_generic_error_t,
+        ) -> *mut xcb_translate_coordinates_reply_t;
         fn xcb_map_window(c: *mut xcb_connection_t, window: xcb_window_t) -> c_uint;
         fn xcb_unmap_window(c: *mut xcb_connection_t, window: xcb_window_t) -> c_uint;
         fn xcb_intern_atom(
@@ -121,6 +133,7 @@ pub(super) const XCB_COPY_FROM_PARENT: u8 = 0;
 // pub(super) const XCB_BUTTON_RELEASE: u8 = 5;
 pub(super) const XCB_FOCUS_IN: u8 = 9;
 pub(super) const XCB_FOCUS_OUT: u8 = 10;
+pub(super) const XCB_REPARENT_NOTIFY: u8 = 21;
 pub(super) const XCB_CONFIGURE_NOTIFY: u8 = 22;
 pub(super) const XCB_CLIENT_MESSAGE: u8 = 33;
 #[cfg(feature = "input")]
@@ -190,6 +203,17 @@ pub(super) struct xcb_screen_t {
 }
 
 #[repr(C)]
+pub(super) struct xcb_translate_coordinates_reply_t {
+    pub(super) response_type: u8,
+    pub(super) same_screen: u8,
+    pub(super) sequence: u16,
+    pub(super) length: u32,
+    pub(super) child: xcb_window_t,
+    pub(super) dst_x: i16,
+    pub(super) dst_y: i16,
+}
+
+#[repr(C)]
 pub(super) struct xcb_intern_atom_reply_t {
     pub(super) response_type: u8,
     pub(super) pad0: u8,
@@ -255,6 +279,20 @@ pub(super) struct xcb_configure_notify_event_t {
     pub(super) border_width: u16,
     pub(super) override_redirect: u8,
     pub(super) _pad1: u8,
+}
+
+#[repr(C)]
+pub(super) struct xcb_reparent_notify_event_t {
+    pub(super) response_type: u8,
+    pub(super) _pad0: u8,
+    pub(super) sequence: u16,
+    pub(super) event: xcb_window_t,
+    pub(super) window: xcb_window_t,
+    pub(super) parent: xcb_window_t,
+    pub(super) x: i16,
+    pub(super) y: i16,
+    pub(super) override_redirect: u8,
+    pub(super) _pad1: [u8; 3],
 }
 
 #[repr(C)]
