@@ -44,6 +44,12 @@ pub fn f(connection: Connection) {
                 Event::Focus(b) => {
                     println!("Window focus state: {}", b);
                 },
+                Event::Maximise(v) => {
+                    println!("!! Maximise: {}", v);
+                },
+                Event::Minimise(v) => {
+                    println!("!! Minimise: {}", v);
+                },
                 Event::Move(t) => {
                     println!("Window move: {:?}", t);
                 },

@@ -394,6 +394,8 @@ struct WindowState {
     event_frontbuf: Vec<Event>,
     event_sync: Mutex<()>,
     mouse_tracked: bool,
+    is_max: bool,
+    is_min: bool,
     style: Style,
 }
 
@@ -415,6 +417,8 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
         event_frontbuf: Vec::new(),
         event_sync: Mutex::new(()),
         mouse_tracked: false,
+        is_max: false,
+        is_min: false,
         style: builder.style,
     }));
 
@@ -866,7 +870,29 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             let w = lparam & 0xFFFF;
             let h = (lparam >> 16) & 0xFFFF;
             let state = &mut *user_state(hwnd);
-            state.dispatch_event(Event::Resize((w as _, h as _)));
+
+            fn set_max_min(user_data: &mut WindowState, max: bool, min: bool) {
+                if user_data.is_max != max {
+                    user_data.is_max = max;
+                    let _ = user_data.dispatch_event(Event::Maximise(max));
+                }
+                if user_data.is_min != min {
+                    user_data.is_min = min;
+                    let _ = user_data.dispatch_event(Event::Minimise(min));
+                }
+            }
+
+            match wparam {
+                SIZE_RESTORED => set_max_min(state, false, false),
+                SIZE_MINIMIZED => set_max_min(state,  false, true),
+                SIZE_MAXIMIZED => set_max_min(state,  true, false),
+                _ => (), // rest are for pop-up (`WS_POPUP`) windows
+            }
+
+            // Minimize events give us a confusing new client size of (0, 0) so we ignore that
+            if wparam != SIZE_MINIMIZED {
+                state.dispatch_event(Event::Resize((w as _, h as _)));
+            }
             0
         },
 
