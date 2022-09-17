@@ -33,6 +33,9 @@ struct Atoms {
     _net_wm_pid: xcb_atom_t,
     wm_client_machine: xcb_atom_t,
     _net_wm_ping: xcb_atom_t,
+    _net_wm_state: xcb_atom_t,
+    _net_wm_state_maximized_horz: xcb_atom_t,
+    _net_wm_state_maximized_vert: xcb_atom_t,
 }
 
 #[derive(Clone, Copy)]
@@ -158,7 +161,7 @@ unsafe impl Send for Connection {}
 
 impl Atoms {
     unsafe fn new(connection: *mut xcb_connection_t) -> Result<Self, Error> {
-        const N_ATOMS: usize = 7;
+        const N_ATOMS: usize = 10;
         let mut atom_replies = [0 as c_uint; N_ATOMS];
         let mut atoms = [0 as xcb_atom_t; N_ATOMS];
         macro_rules! atom {
@@ -173,6 +176,9 @@ impl Atoms {
         atom!(4, "_NET_WM_PID");
         atom!(5, "WM_CLIENT_MACHINE");
         atom!(6, "_NET_WM_PING");
+        atom!(7, "_NET_WM_STATE");
+        atom!(8, "_NET_WM_STATE_MAXIMIZED_HORZ");
+        atom!(9, "_NET_WM_STATE_MAXIMIZED_VERT");
         for (r, seq) in atoms.iter_mut().zip(atom_replies.into_iter()) {
             let mut err: *mut xcb_generic_error_t = std::ptr::null_mut();
             let reply = xcb_intern_atom_reply(connection, seq, &mut err);
@@ -194,6 +200,9 @@ impl Atoms {
             _net_wm_pid: atoms[4],
             wm_client_machine: atoms[5],
             _net_wm_ping: atoms[6],
+            _net_wm_state: atoms[7],
+            _net_wm_state_maximized_horz: atoms[8],
+            _net_wm_state_maximized_vert: atoms[9],
         })
     }
 }
@@ -366,6 +375,7 @@ impl Window {
                 );
             }
 
+            // Set class name
             let mut instance = "unknown".to_string();
             if let Some(name) = std::env::var_os("RESOURCE_NAME") {
                 instance = name.as_os_str().to_string_lossy().into_owned();
@@ -392,6 +402,11 @@ impl Window {
             // Map window to screen
             if builder.style.visible {
                 let _ = xcb_map_window(c, xid);
+
+                // Set maximised (this needs to be done after map)
+                if builder.maximised {
+                    internal_set_maximised(c, xid, &connection.details, true);
+                }
             }
 
             // Now we'll insert an entry into the EVENT_QUEUE hashmap for this window we've created.
@@ -477,6 +492,14 @@ impl Window {
                     }
                 }
             }
+        }
+    }
+
+    pub(crate) fn set_maximised(&self, maximised: bool) {
+        let mut connection_ = mutex_lock(&self.connection.0);
+        let connection = &mut connection_;
+        unsafe {
+            internal_set_maximised(connection.details.connection, self.details.handle, &connection.details, maximised);
         }
     }
 
@@ -718,7 +741,33 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
     free(ev.cast());
 }
 
-// internal-only function for setting window name, assumes we hold connection lock
+// assumes we hold connection lock
+unsafe fn internal_set_maximised(c: *mut xcb_connection_t, xid: xcb_window_t, details: &ConnectionDetails, maximised: bool) {
+    let action = if maximised { 1 } else { 0 };
+    let client_message = xcb_client_message_event_t {
+        response_type: XCB_CLIENT_MESSAGE,
+        format: 32,
+        sequence: 0,
+        window: xid,
+        r#type: details.atoms._net_wm_state,
+        client_data: ClientData { data32: [
+            action,
+            details.atoms._net_wm_state_maximized_horz,
+            details.atoms._net_wm_state_maximized_vert,
+            1,
+            0,
+        ] },
+    };
+    xcb_discard_reply(c, xcb_send_event_checked(
+        c,
+        0,
+        (*details.screen).root,
+        XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT,
+        (&client_message as *const _) as *const i8,
+    ));
+}
+
+// assumes we hold connection lock
 unsafe fn internal_set_title(c: *mut xcb_connection_t, xid: xcb_window_t, atoms: &Atoms, title: &str) {
     let _ = xcb_change_property(
         c,
