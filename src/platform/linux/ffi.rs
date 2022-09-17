@@ -133,6 +133,8 @@ pub(super) const XCB_COPY_FROM_PARENT: u8 = 0;
 // pub(super) const XCB_BUTTON_RELEASE: u8 = 5;
 pub(super) const XCB_FOCUS_IN: u8 = 9;
 pub(super) const XCB_FOCUS_OUT: u8 = 10;
+pub(super) const XCB_UNMAP_NOTIFY: u8 = 18;
+pub(super) const XCB_MAP_NOTIFY: u8 = 19;
 pub(super) const XCB_REPARENT_NOTIFY: u8 = 21;
 pub(super) const XCB_CONFIGURE_NOTIFY: u8 = 22;
 pub(super) const XCB_CLIENT_MESSAGE: u8 = 33;
@@ -292,6 +294,28 @@ pub(super) struct xcb_reparent_notify_event_t {
     pub(super) x: i16,
     pub(super) y: i16,
     pub(super) override_redirect: u8,
+    pub(super) _pad1: [u8; 3],
+}
+
+#[repr(C)]
+pub(super) struct xcb_map_notify_event_t {
+    pub(super) response_type: u8,
+    pub(super) _pad0: u8,
+    pub(super) sequence: u16,
+    pub(super) event: xcb_window_t,
+    pub(super) window: xcb_window_t,
+    pub(super) override_redirect: u8,
+    pub(super) _pad1: [u8; 3],
+}
+
+#[repr(C)]
+pub(super) struct xcb_unmap_notify_event_t {
+    pub(super) response_type: u8,
+    pub(super) _pad0: u8,
+    pub(super) sequence: u16,
+    pub(super) event: xcb_window_t,
+    pub(super) window: xcb_window_t,
+    pub(super) from_configure: u8,
     pub(super) _pad1: [u8; 3],
 }
 

@@ -56,6 +56,9 @@ pub fn f(connection: Connection) {
                 Event::Resize(t) => {
                     println!("Window resize: {:?}", t);
                 },
+                Event::Visible(t) => {
+                    println!("Window{} visible", if *t { "" } else { " not" });
+                },
                 #[cfg(feature = "input")]
                 Event::KeyboardDown(k) => {
                     println!("Key down: {:?}", k);

@@ -526,6 +526,8 @@ unsafe fn get_event_window(ev: *mut xcb_generic_event_t, details: &ConnectionDet
     match (*ev).response_type & !(1 << 7) {
         XCB_CLIENT_MESSAGE => Some((*(ev as *mut xcb_client_message_event_t)).window),
         XCB_FOCUS_IN | XCB_FOCUS_OUT => Some((*(ev as *mut xcb_focus_in_event_t)).event),
+        XCB_MAP_NOTIFY => Some((*(ev as *mut xcb_map_notify_event_t)).window),
+        XCB_UNMAP_NOTIFY => Some((*(ev as *mut xcb_unmap_notify_event_t)).window),
         XCB_REPARENT_NOTIFY => Some((*(ev as *mut xcb_reparent_notify_event_t)).window),
         XCB_CONFIGURE_NOTIFY => Some((*(ev as *mut xcb_configure_notify_event_t)).window),
         #[cfg(feature = "input")]
@@ -611,6 +613,8 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
                 window.event_buffer.push(Event::Move(xy));
             }
         },
+        XCB_MAP_NOTIFY => window.event_buffer.push(Event::Visible(true)),
+        XCB_UNMAP_NOTIFY => window.event_buffer.push(Event::Visible(false)),
         #[cfg(feature = "input")]
         XCB_GE_GENERIC => {
             let event = &*(ev as *mut xcb_ge_generic_event_t);
