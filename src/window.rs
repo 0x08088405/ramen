@@ -65,8 +65,7 @@ impl Window {
     /// This function does not complete immediately - it simply sends a request to the operating system. The operating
     /// system may or may not choose to honour your request. If it does honour the request, it is guaranteed to have
     /// completed by the next time `poll_events()` returns after being called for this window, and the resulting set of
-    /// events will contain a `Visibility` event if the window's visibility changed' as a result of calling this
-    /// function.
+    /// events will contain a `Visible` event if the window's visibility changed as a result of calling this function.
     pub fn set_visible(&self, visible: bool) {
         self.0.set_visible(visible)
     }
