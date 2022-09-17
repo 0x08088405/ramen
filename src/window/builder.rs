@@ -13,6 +13,7 @@ use std::borrow::Cow;
 pub struct Builder {
     pub(crate) connection: Connection,
     pub(crate) class_name: Cow<'static, str>,
+    pub(crate) position: Option<(i16, i16)>,
     pub(crate) size: (u16, u16),
     pub(crate) style: Style,
     pub(crate) title: Cow<'static, str>,
@@ -23,6 +24,7 @@ impl Builder {
         Builder {
             connection,
             class_name: Cow::Borrowed("ramen_window"),
+            position: None,
             size: (800, 608),
             style: match style {
                 // Why is `Option::unwrap_or` not const fn?!
@@ -91,6 +93,11 @@ impl Builder {
     /// Defaults to `false`.
     pub fn right_to_left(mut self, right_to_left: bool) -> Self {
         self.style.right_to_left = right_to_left;
+        self
+    }
+
+    pub fn position(mut self, position: Option<(i16, i16)>) -> Self {
+        self.position = position;
         self
     }
 
