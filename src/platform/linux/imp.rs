@@ -653,14 +653,12 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
                         window.event_buffer.push(Event::MouseMove(((event.event_x >> 16) as _, (event.event_y >> 16) as _)))
                     },
                     XCB_INPUT_ENTER => {
-                        // TODO: this
                         let _event = &*(ev as *mut xcb_input_enter_event_t);
-                        println!("Input enter")
+                        window.event_buffer.push(Event::MouseEnter);
                     },
                     XCB_INPUT_LEAVE => {
-                        // TODO: this
                         let _event = &*(ev as *mut xcb_input_leave_event_t);
-                        println!("Input leave")
+                        window.event_buffer.push(Event::MouseLeave);
                     },
                     e @ XCB_INPUT_FOCUS_IN | e @ XCB_INPUT_FOCUS_OUT => {
                         let state = e == XCB_INPUT_FOCUS_IN;
