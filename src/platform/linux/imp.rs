@@ -601,6 +601,7 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
                     if !err.is_null() {
                         free(err.cast());
                     }
+                    free(ev.cast());
                     return;
                 }
             }
