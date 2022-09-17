@@ -394,6 +394,7 @@ struct WindowState {
     event_frontbuf: Vec<Event>,
     event_sync: Mutex<()>,
     mouse_tracked: bool,
+    dpi: UINT,
     is_max: bool,
     is_min: bool,
     style: Style,
@@ -417,6 +418,7 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
         event_frontbuf: Vec::new(),
         event_sync: Mutex::new(()),
         mouse_tracked: false,
+        dpi,
         is_max: false,
         is_min: false,
         style: builder.style,
@@ -497,7 +499,10 @@ impl Window {
 
     pub(crate) fn set_size(&self, (w, h): (u16, u16)) {
         unsafe {
-            let _ = SetWindowPos(self.hwnd, ptr::null_mut(), 0, 0, w as _, h as _, SWP_NOMOVE);
+            let state = &*self.state.get();
+            let (dw_style, dw_style_ex) = style_to_bits(&state.style);
+            let (width, height) = adjust_window_for_dpi(WIN32.get(), (w, h), dw_style, dw_style_ex, state.dpi);
+            let _ = SetWindowPos(self.hwnd, ptr::null_mut(), 0, 0, width as _, height as _, SWP_NOMOVE);
         }
     }
 
