@@ -452,6 +452,9 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
     }?;
 
     set_close_button(hwnd, style.controls.as_ref().map(|x| x.close).unwrap_or(false));
+    if builder.maximised {
+        let _ = ShowWindow(hwnd, 3);
+    }
 
     Ok(Window {
         _connection: builder.connection,

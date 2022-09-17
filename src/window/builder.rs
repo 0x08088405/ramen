@@ -13,6 +13,7 @@ use std::borrow::Cow;
 pub struct Builder {
     pub(crate) connection: Connection,
     pub(crate) class_name: Cow<'static, str>,
+    pub(crate) maximised: bool,
     pub(crate) position: Option<(i16, i16)>,
     pub(crate) size: (u16, u16),
     pub(crate) style: Style,
@@ -24,6 +25,7 @@ impl Builder {
         Builder {
             connection,
             class_name: Cow::Borrowed("ramen_window"),
+            maximised: false,
             position: None,
             size: (800, 608),
             style: match style {
@@ -93,6 +95,11 @@ impl Builder {
     /// Defaults to `false`.
     pub fn right_to_left(mut self, right_to_left: bool) -> Self {
         self.style.right_to_left = right_to_left;
+        self
+    }
+
+    pub fn maximised(mut self, maximised: bool) -> Self {
+        self.maximised = maximised;
         self
     }
 
