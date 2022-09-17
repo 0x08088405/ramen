@@ -889,16 +889,16 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
                 }
             }
 
+            // Minimize events give us a confusing new client size of (0, 0) so we ignore that
+            if wparam != SIZE_MINIMIZED {
+                state.dispatch_event(Event::Resize((w as _, h as _)));
+            }
+
             match wparam {
                 SIZE_RESTORED => set_max_min(state, false, false),
                 SIZE_MINIMIZED => set_max_min(state,  false, true),
                 SIZE_MAXIMIZED => set_max_min(state,  true, false),
                 _ => (), // rest are for pop-up (`WS_POPUP`) windows
-            }
-
-            // Minimize events give us a confusing new client size of (0, 0) so we ignore that
-            if wparam != SIZE_MINIMIZED {
-                state.dispatch_event(Event::Resize((w as _, h as _)));
             }
             0
         },
