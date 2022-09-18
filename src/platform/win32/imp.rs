@@ -405,8 +405,8 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
     let style = builder.style;
     let (dw_style, dw_style_ex) = style_to_bits(&style);
     let dpi = BASE_DPI; // TODO: lol!
-    let ((width, height), _) = adjust_window_for_dpi(WIN32.get(), builder.size, dw_style, dw_style_ex, dpi);
-    let (pos_x, pos_y) = builder.position.map(|(x, y)| (x as _, y as _)).unwrap_or((CW_USEDEFAULT, CW_USEDEFAULT));
+    let ((width, height), wrect) = adjust_window_for_dpi(WIN32.get(), builder.size, dw_style, dw_style_ex, dpi);
+    let (pos_x, pos_y) = builder.position.map(|(x, y)| (x as LONG + wrect.left, y as LONG + wrect.top)).unwrap_or((CW_USEDEFAULT, CW_USEDEFAULT));
     let window_state = Box::new(UnsafeCell::new(WindowState {
         event_backbuf: Vec::new(),
         event_frontbuf: Vec::new(),
