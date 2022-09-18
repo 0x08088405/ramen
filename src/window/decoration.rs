@@ -41,7 +41,6 @@ pub struct Style {
     pub(crate) borderless: bool,
     pub(crate) controls: Option<Controls>,
     pub(crate) resizable: bool,
-    pub(crate) right_to_left: bool,
     pub(crate) visible: bool,
 }
 
@@ -51,7 +50,6 @@ impl Style {
             borderless: false,
             controls: Some(Controls::new()),
             resizable: true,
-            right_to_left: false,
             visible: true,
         }
     }
@@ -72,13 +70,6 @@ impl Style {
     pub const fn resizable(self, resizable: bool) -> Self {
         // TODO spelling
         Self { resizable, ..self }
-    }
-
-    /// Whether the window controls and title bar have a right-to-left layout.
-    ///
-    /// Defaults to `false`.
-    pub const fn right_to_left(self, right_to_left: bool) -> Self {
-        Self { right_to_left, ..self }
     }
 
     /// Whether the window is visible to the user.

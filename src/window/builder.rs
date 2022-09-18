@@ -90,14 +90,6 @@ impl Builder {
         self
     }
 
-    /// Sets whether the window controls and title bar initially have a right-to-left layout.
-    ///
-    /// Defaults to `false`.
-    pub fn right_to_left(mut self, right_to_left: bool) -> Self {
-        self.style.right_to_left = right_to_left;
-        self
-    }
-
     /// Sets whether the window should begin maximised on the user's monitor.
     /// 
     /// If the user has multiple monitors, the primary monitor will usually be selected.

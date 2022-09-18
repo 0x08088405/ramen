@@ -32,7 +32,6 @@ pub fn f(connection: Connection) {
         .class_name("OpenGMK")
         .resizable(true)
         .title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏")
-        .right_to_left(false)
         .maximised(false)
         .position(None)
         .size((800, 608))

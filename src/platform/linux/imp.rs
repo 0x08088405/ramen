@@ -610,7 +610,6 @@ unsafe fn set_mwm_hints(
     if !style.borderless {
         hints.decorations |= MWM_DECOR_BORDER;
         hints.decorations |= MWM_DECOR_TITLE;
-        hints.decorations |= MWM_DECOR_MENU;
         hints.functions |= MWM_FUNC_MOVE;
     }
     if style.resizable {
@@ -618,6 +617,7 @@ unsafe fn set_mwm_hints(
         hints.functions |= MWM_FUNC_RESIZE;
     }
     if let Some(controls) = style.controls {
+        hints.decorations |= MWM_DECOR_MENU;
         if controls.minimise { hints.functions |= MWM_FUNC_MINIMIZE; }
         if controls.maximise && style.resizable { hints.functions |= MWM_FUNC_MAXIMIZE; }
         if controls.close { hints.functions |= MWM_FUNC_CLOSE; }
