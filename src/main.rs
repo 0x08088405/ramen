@@ -1,5 +1,8 @@
 use ramen::{connection::Connection, event::Event}; // There's no actual error here it's an RA bug sorry in advance
 
+#[cfg(feature = "input")]
+use ramen::input::Key;
+
 pub fn main() {
     let c = match Connection::new() {
         Ok(c) => c,
@@ -24,7 +27,16 @@ pub fn main() {
 pub fn f(connection: Connection) {
     let mut window = match connection
         .into_builder()
+        .borderless(false)
+        .controls(None)
+        .class_name("OpenGMK")
+        .resizable(true)
         .title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏")
+        .right_to_left(false)
+        .maximised(false)
+        .position(None)
+        .size((800, 608))
+        .visible(true)
         .build()
     {
         Ok(w) => w,
@@ -62,6 +74,14 @@ pub fn f(connection: Connection) {
                 #[cfg(feature = "input")]
                 Event::KeyboardDown(k) => {
                     println!("Key down: {:?}", k);
+                    match k {
+                        Key::T => window.set_title("This is a different title"),
+                        Key::M => window.set_maximised(true),
+                        Key::N => window.set_maximised(false),
+                        Key::P => window.set_position((10, 10)),
+                        Key::S => window.set_size((800, 608)),
+                        _ => (),
+                    }
                 },
                 #[cfg(feature = "input")]
                 Event::KeyboardRepeat(k) => {
