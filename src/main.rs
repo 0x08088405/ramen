@@ -80,6 +80,7 @@ pub fn f(connection: Connection) {
                         Key::N => window.set_maximised(false),
                         Key::P => window.set_position((10, 10)),
                         Key::S => window.set_size((800, 608)),
+                        Key::R => window.set_resizable(false),
                         _ => (),
                     }
                 },

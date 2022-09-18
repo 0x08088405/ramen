@@ -63,6 +63,10 @@ impl Window {
         self.0.set_position(position)
     }
 
+    pub fn set_resizable(&self, resizable: bool) {
+        self.0.set_resizable(resizable)
+    }
+
     /// Sets the size, in pixels, of the inner drawable area of the window.
     /// 
     /// This function does not complete immediately - it simply sends a request to the operating system. The operating

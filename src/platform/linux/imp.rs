@@ -2,7 +2,7 @@
 use crate::{error::Error, event::Event, util::sync::mutex_lock, connection, window};
 use super::ffi::*;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::atomic::{self, AtomicBool}};
 
 /// The initial capacity for any Vec<Event>
 /// Event is around 8 bytes in size, so it's fairly costless for this to be a large starting capacity.
@@ -221,6 +221,7 @@ pub(crate) struct WindowDetails {
     event_buffer: Vec<Event>,
     parent: xcb_window_t,
     position: (i16, i16),
+    resizable: AtomicBool,
     size: (u16, u16),
     state_maximised: (bool, bool), // horz vert
     state_minimised: bool,
@@ -428,18 +429,24 @@ impl Window {
 
             let root = (*connection.details.screen).root;
             std::mem::drop(connection_mtx);
-            Ok(Window {
+
+            let window = Window {
                 connection: builder.connection,
                 details: WindowDetails {
                     handle: xid,
                     event_buffer: Vec::with_capacity(QUEUE_SIZE),
                     parent: root,
                     position: (x, y),
+                    resizable: AtomicBool::new(builder.style.resizable),
                     size: (width, height),
                     state_maximised: (false, false),
                     state_minimised: false,
                 },
-            })
+            };
+
+            set_wm_normal_hints(c, &window.details, window.details.size);
+
+            Ok(window)
         }
     }
 
@@ -521,12 +528,20 @@ impl Window {
         }
     }
 
+    pub(crate) fn set_resizable(&self, resizable: bool) {
+        let mut connection_ = mutex_lock(&self.connection.0);
+        let connection = &mut connection_;
+        let _old = self.details.resizable.swap(resizable, atomic::Ordering::SeqCst);
+        unsafe { set_wm_normal_hints(connection.details.connection, &self.details, self.details.size) };
+    }
+
     pub(crate) fn set_size(&self, (width, height): (u16, u16)) {
         let mut connection_ = mutex_lock(&self.connection.0);
         let connection = &mut connection_;
         let wh = [width as u32, height as u32];
         unsafe {
             _ = xcb_configure_window(connection.details.connection, self.details.handle, 4|8, wh.as_ptr().cast());
+            set_wm_normal_hints(connection.details.connection, &self.details, (width, height));
         }
     }
 
@@ -560,6 +575,36 @@ impl Drop for Window {
             let _ = xcb_flush(connection.details.connection);
         }
     }
+}
+
+unsafe fn set_wm_normal_hints(c: *mut xcb_connection_t, details: &WindowDetails, size: (u16, u16)) {
+    let mut hints = std::mem::MaybeUninit::<xcb_size_hints_t>::zeroed().assume_init();
+    let resizable = details.resizable.load(atomic::Ordering::SeqCst);
+    if !resizable {
+        hints.flags |= ICCCM_SIZE_HINT_P_MIN_SIZE;
+        hints.flags |= ICCCM_SIZE_HINT_P_MAX_SIZE;
+        hints.min_width = size.0 as _;
+        hints.min_height = size.1 as _;
+        hints.max_width = size.0 as _;
+        hints.max_height = size.1 as _;
+    } else {
+        hints.flags |= ICCCM_SIZE_HINT_P_MIN_SIZE;
+        hints.min_width = 1;
+        hints.min_height = 1;
+    }
+    hints.flags |= ICCCM_SIZE_HINT_BASE_SIZE;
+    hints.base_width = size.0 as _;
+    hints.base_height = size.1 as _;
+    _ = xcb_change_property(
+        c,
+        XCB_PROP_MODE_REPLACE,
+        details.handle,
+        XCB_ATOM_WM_NORMAL_HINTS,
+        XCB_ATOM_WM_SIZE_HINTS,
+        32,
+        std::mem::size_of_val(&hints) as u32 / 4,
+        (&hints) as *const _ as _,
+    );
 }
 
 // Gets the window an event is destined for, if any. `None` results should be discarded.

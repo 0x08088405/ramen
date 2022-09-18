@@ -172,6 +172,10 @@ pub(super) const XCB_ALLOC: c_int = 11;
 pub(super) const XCB_CONN_CLOSED_EXT_NOTSUPPORTED: c_int = 2;
 pub(super) const XCB_CONN_CLOSED_MEM_INSUFFICIENT: c_int = 3;
 
+pub(super) const ICCCM_SIZE_HINT_P_MIN_SIZE: u32 = 1 << 4;
+pub(super) const ICCCM_SIZE_HINT_P_MAX_SIZE: u32 = 1 << 5;
+pub(super) const ICCCM_SIZE_HINT_BASE_SIZE: u32 = 1 << 8;
+
 #[repr(C)]
 pub(super) struct xcb_generic_error_t {
     pub(super) response_type: u8,
@@ -190,6 +194,28 @@ pub(super) struct xcb_screen_iterator_t {
     pub(super) data: *mut xcb_screen_t,
     pub(super) rem: c_int,
     pub(super) index: c_int,
+}
+
+#[repr(C)]
+pub(super) struct xcb_size_hints_t {
+    pub(super) flags: u32,
+    pub(super) x: i32,
+    pub(super) y: i32,
+    pub(super) width: i32,
+    pub(super) height: i32,
+    pub(super) min_width: i32,
+    pub(super) min_height: i32,
+    pub(super) max_width: i32,
+    pub(super) max_height: i32,
+    pub(super) width_inc: i32,
+    pub(super) height_inc: i32,
+    pub(super) min_aspect_num: i32,
+    pub(super) min_aspect_den: i32,
+    pub(super) max_aspect_num: i32,
+    pub(super) max_aspect_den: i32,
+    pub(super) base_width: i32,
+    pub(super) base_height: i32,
+    pub(super) win_gravity: u32,
 }
 
 #[repr(C)]
@@ -352,6 +378,8 @@ pub(super) struct xcb_property_notify_event_t {
 }
 pub(super) const XCB_PROPERTY_NEW_VALUE: u8 = 0;
 pub(super) const XCB_PROPERTY_DELETE: u8 = 1;
+pub(super) const XCB_ATOM_WM_NORMAL_HINTS: u32 = 40;
+pub(super) const XCB_ATOM_WM_SIZE_HINTS: u32 = 41;
 
 #[repr(C)]
 pub(crate) union ClientData {
