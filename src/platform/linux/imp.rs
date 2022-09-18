@@ -547,7 +547,10 @@ impl Window {
         let mut g = mutex_lock(&self.details.style);
         g.resizable = resizable;
         std::mem::drop(g);
-        unsafe { set_wm_normal_hints(connection.details.connection, &self.details, self.details.size) };
+        unsafe {
+            set_mwm_hints(connection.details.connection, &connection.details, &self.details);
+            set_wm_normal_hints(connection.details.connection, &self.details, self.details.size);
+        }
     }
 
     pub(crate) fn set_size(&self, (width, height): (u16, u16)) {
@@ -611,16 +614,17 @@ unsafe fn set_mwm_hints(
         hints.decorations |= MWM_DECOR_BORDER;
         hints.decorations |= MWM_DECOR_TITLE;
         hints.functions |= MWM_FUNC_MOVE;
-    }
-    if style.resizable {
-        hints.decorations |= MWM_DECOR_RESIZEH;
-        hints.functions |= MWM_FUNC_RESIZE;
-    }
-    if let Some(controls) = style.controls {
-        hints.decorations |= MWM_DECOR_MENU;
-        if controls.minimise { hints.functions |= MWM_FUNC_MINIMIZE; }
-        if controls.maximise && style.resizable { hints.functions |= MWM_FUNC_MAXIMIZE; }
-        if controls.close { hints.functions |= MWM_FUNC_CLOSE; }
+    } else {
+        if style.resizable {
+            hints.decorations |= MWM_DECOR_RESIZEH;
+            hints.functions |= MWM_FUNC_RESIZE;
+        }
+        if let Some(controls) = style.controls {
+            hints.decorations |= MWM_DECOR_MENU;
+            if controls.minimise { hints.functions |= MWM_FUNC_MINIMIZE; }
+            if controls.maximise && style.resizable { hints.functions |= MWM_FUNC_MAXIMIZE; }
+            if controls.close { hints.functions |= MWM_FUNC_CLOSE; }
+        }
     }
     _ = xcb_change_property(
         c,

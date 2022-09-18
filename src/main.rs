@@ -25,12 +25,15 @@ pub fn main() {
 }
 
 pub fn f(connection: Connection) {
+    let mut borderless = false;
+    let mut resizable = false;
     let mut window = match connection
         .into_builder()
-        .borderless(false)
         .controls(Some(ramen::window::Controls::new()))
+        .borderless(borderless)
+        .controls(None)
         .class_name("OpenGMK")
-        .resizable(true)
+        .resizable(resizable)
         .title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏")
         .maximised(false)
         .position(None)
@@ -44,8 +47,6 @@ pub fn f(connection: Connection) {
             return;
         },
     };
-    let mut borderless = false;
-    let mut resizable = true;
     'program: loop {
         window.poll_events();
         for event in window.events() {
