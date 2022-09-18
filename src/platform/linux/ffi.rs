@@ -570,12 +570,20 @@ pub(crate) struct MwmHints {
     pub(crate) status: u32,
 }
 
+pub(crate) const MWM_HINTS_FUNCTIONS: u32 = 1 << 0;
 pub(crate) const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
 
-pub(crate) const MWM_DECOR_ALL: u32 = 1;
-// pub(crate) const MWM_DECOR_BORDER: u32 = 1 << 1;
-// pub(crate) const MWM_DECOR_RESIZEH: u32 = 1 << 2;
-// pub(crate) const MWM_DECOR_TITLE: u32 = 1 << 3;
-// pub(crate) const MWM_DECOR_MENU: u32 = 1 << 4;
+// pub(crate) const MWM_DECOR_ALL: u32 = 1 << 0;
+pub(crate) const MWM_DECOR_BORDER: u32 = 1 << 1;
+pub(crate) const MWM_DECOR_RESIZEH: u32 = 1 << 2;
+pub(crate) const MWM_DECOR_TITLE: u32 = 1 << 3;
+pub(crate) const MWM_DECOR_MENU: u32 = 1 << 4;
 // pub(crate) const MWM_DECOR_MINIMIZE: u32 = 1 << 5;
 // pub(crate) const MWM_DECOR_MAXIMIZE: u32 = 1 << 6;
+
+// pub(crate) const MWM_FUNC_ALL: u32 = 1 << 0;
+pub(crate) const MWM_FUNC_RESIZE: u32 = 1 << 1;
+pub(crate) const MWM_FUNC_MOVE: u32 = 1 << 2;
+pub(crate) const MWM_FUNC_MINIMIZE: u32 = 1 << 3;
+pub(crate) const MWM_FUNC_MAXIMIZE: u32 = 1 << 4;
+pub(crate) const MWM_FUNC_CLOSE: u32 = 1 << 5;

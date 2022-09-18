@@ -1,8 +1,8 @@
 // TODO: I suppose we'll need some method of deciding at runtime whether to use x11 or wayland? This is just x11
-use crate::{error::Error, event::Event, util::sync::mutex_lock, connection, window};
+use crate::{error::Error, event::Event, util::sync::{mutex_lock, Mutex}, connection, window};
 use super::ffi::*;
 
-use std::{collections::HashMap, sync::atomic::{self, AtomicBool}};
+use std::{collections::HashMap, sync::Arc};
 
 /// The initial capacity for any Vec<Event>
 /// Event is around 8 bytes in size, so it's fairly costless for this to be a large starting capacity.
@@ -221,11 +221,10 @@ pub(crate) struct Window {
 // Proxy struct that pretty much only exists to get around the fact that we're using Rust
 pub(crate) struct WindowDetails {
     handle: xcb_window_t,
+    style: Arc<Mutex<crate::window::Style>>,
     event_buffer: Vec<Event>,
     parent: xcb_window_t,
     position: (i16, i16),
-    borderless: AtomicBool,
-    resizable: AtomicBool,
     size: (u16, u16),
     state_maximised: (bool, bool), // horz vert
     state_minimised: bool,
@@ -441,8 +440,7 @@ impl Window {
                     event_buffer: Vec::with_capacity(QUEUE_SIZE),
                     parent: root,
                     position: (x, y),
-                    borderless: AtomicBool::new(builder.style.borderless),
-                    resizable: AtomicBool::new(builder.style.resizable),
+                    style: Arc::new(Mutex::new(builder.style)),
                     size: (width, height),
                     state_maximised: (false, false),
                     state_minimised: false,
@@ -537,14 +535,18 @@ impl Window {
     pub(crate) fn set_borderless(&self, borderless: bool) {
         let mut connection_ = mutex_lock(&self.connection.0);
         let connection = &mut connection_;
-        let _old = self.details.borderless.swap(borderless, atomic::Ordering::SeqCst);
+        let mut g = mutex_lock(&self.details.style);
+        g.borderless = borderless;
+        std::mem::drop(g);
         unsafe { set_mwm_hints(connection.details.connection, &connection.details, &self.details) };
     }
 
     pub(crate) fn set_resizable(&self, resizable: bool) {
         let mut connection_ = mutex_lock(&self.connection.0);
         let connection = &mut connection_;
-        let _old = self.details.resizable.swap(resizable, atomic::Ordering::SeqCst);
+        let mut g = mutex_lock(&self.details.style);
+        g.resizable = resizable;
+        std::mem::drop(g);
         unsafe { set_wm_normal_hints(connection.details.connection, &self.details, self.details.size) };
     }
 
@@ -595,14 +597,31 @@ unsafe fn set_mwm_hints(
     cdetails: &ConnectionDetails,
     wdetails: &WindowDetails,
 ) {
-    let borderless = wdetails.borderless.load(atomic::Ordering::SeqCst);
-    let hints = MwmHints {
-        flags: MWM_HINTS_DECORATIONS,
+    let g = mutex_lock(&wdetails.style);
+    let style = *g;
+    std::mem::drop(g);
+    let mut hints = MwmHints {
+        flags: MWM_HINTS_FUNCTIONS | MWM_HINTS_DECORATIONS,
         functions: 0,
-        decorations: if borderless { 0 } else { MWM_DECOR_ALL },
+        decorations: 0,
         input_mode: 0,
         status: 0,
     };
+    if !style.borderless {
+        hints.decorations |= MWM_DECOR_BORDER;
+        hints.decorations |= MWM_DECOR_TITLE;
+        hints.decorations |= MWM_DECOR_MENU;
+        hints.functions |= MWM_FUNC_MOVE;
+    }
+    if style.resizable {
+        hints.decorations |= MWM_DECOR_RESIZEH;
+        hints.functions |= MWM_FUNC_RESIZE;
+    }
+    if let Some(controls) = style.controls {
+        if controls.minimise { hints.functions |= MWM_FUNC_MINIMIZE; }
+        if controls.maximise && style.resizable { hints.functions |= MWM_FUNC_MAXIMIZE; }
+        if controls.close { hints.functions |= MWM_FUNC_CLOSE; }
+    }
     _ = xcb_change_property(
         c,
         XCB_PROP_MODE_REPLACE,
@@ -617,7 +636,9 @@ unsafe fn set_mwm_hints(
 
 unsafe fn set_wm_normal_hints(c: *mut xcb_connection_t, details: &WindowDetails, size: (u16, u16)) {
     let mut hints = std::mem::MaybeUninit::<xcb_size_hints_t>::zeroed().assume_init();
-    let resizable = details.resizable.load(atomic::Ordering::SeqCst);
+    let g = mutex_lock(&details.style);
+    let resizable = g.resizable;
+    std::mem::drop(g);
     if !resizable {
         hints.flags |= ICCCM_SIZE_HINT_P_MIN_SIZE;
         hints.flags |= ICCCM_SIZE_HINT_P_MAX_SIZE;
