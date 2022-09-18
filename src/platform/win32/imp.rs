@@ -27,7 +27,6 @@ const BASE_DPI: UINT = 120;
 /// Custom window message
 const RAMEN_WM_CREATE: UINT = WM_USER + 0;
 const RAMEN_WM_DROP: UINT = WM_USER + 1;
-const RAMEN_WM_SETVISIBLE: UINT = WM_USER + 2;
 
 /// Checks the current Windows version (see usage in `Win32State`)
 unsafe fn is_windows_ver_or_greater(dl: &Win32DL, major: WORD, minor: WORD, sp_major: WORD) -> bool {
@@ -330,15 +329,13 @@ fn style_to_bits(style: &window::Style) -> (DWORD, DWORD) {
         borderless,
         controls,
         resizable,
-        right_to_left,
         visible,
     } = *style;
 
-    let (mut style, mut style_ex) = (0, 0);
+    let (mut style, style_ex) = (0, 0);
 
-    // TODO Why does this need THICKFRAME to work? Very strange.
     if borderless {
-        style |= WS_POPUP | WS_THICKFRAME;
+        style |= WS_POPUP;
     } else {
         style |= WS_OVERLAPPED | WS_BORDER | WS_CAPTION;
     }
@@ -346,16 +343,13 @@ fn style_to_bits(style: &window::Style) -> (DWORD, DWORD) {
         if controls.minimise {
             style |= WS_MINIMIZEBOX;
         }
-        if controls.maximise {
+        if controls.maximise && resizable {
             style |= WS_MAXIMIZEBOX;
         }
         style |= WS_SYSMENU;
     }
     if resizable {
         style |= WS_THICKFRAME;
-    }
-    if right_to_left {
-        style_ex |= WS_EX_LAYOUTRTL;
     }
     if visible {
         style |= WS_VISIBLE;
@@ -491,6 +485,30 @@ impl Window {
         }
     }
 
+    pub(crate) fn set_borderless(&self, borderless: bool) {
+        unsafe {
+            let state = &mut *user_state(self.hwnd);
+            let _g = sync::mutex_lock(&state.event_sync);
+            state.style.borderless = borderless;
+            let (dw_style, dw_style_ex) = style_to_bits(&state.style);
+            let _ = set_instance_storage(self.hwnd, GWL_STYLE, dw_style as _);
+            let _ = set_instance_storage(self.hwnd, GWL_EXSTYLE, dw_style_ex as _);
+            ping_window_frame(self.hwnd);
+        }
+    }
+
+    pub(crate) fn set_resizable(&self, resizable: bool) {
+        unsafe {
+            let state = &mut *user_state(self.hwnd);
+            let _g = sync::mutex_lock(&state.event_sync);
+            state.style.resizable = resizable;
+            let (dw_style, dw_style_ex) = style_to_bits(&state.style);
+            let _ = set_instance_storage(self.hwnd, GWL_STYLE, dw_style as _);
+            let _ = set_instance_storage(self.hwnd, GWL_EXSTYLE, dw_style_ex as _);
+            ping_window_frame(self.hwnd);
+        }
+    }
+
     pub(crate) fn set_maximised(&self, maximised: bool) {
         unsafe {
             let state = &*self.state.get();
@@ -511,6 +529,7 @@ impl Window {
     pub(crate) fn set_position(&self, (x, y): (i16, i16)) {
         unsafe {
             let state = &*self.state.get();
+            let _g = sync::mutex_lock(&state.event_sync);
             let (dw_style, dw_style_ex) = style_to_bits(&state.style);
             let (_, RECT { top, left, .. }) = adjust_window_for_dpi(WIN32.get(), (0, 0), dw_style, dw_style_ex, state.dpi);
             let xx = x + left as i16;
@@ -522,6 +541,7 @@ impl Window {
     pub(crate) fn set_size(&self, (w, h): (u16, u16)) {
         unsafe {
             let state = &*self.state.get();
+            let _g = sync::mutex_lock(&state.event_sync);
             let (dw_style, dw_style_ex) = style_to_bits(&state.style);
             let ((width, height), _) = adjust_window_for_dpi(WIN32.get(), (w, h), dw_style, dw_style_ex, state.dpi);
             let _ = SetWindowPos(self.hwnd, ptr::null_mut(), 0, 0, width as _, height as _, SWP_NOMOVE);
@@ -531,7 +551,6 @@ impl Window {
     pub(crate) fn set_visible(&self, visible: bool) {
         unsafe {
             let _ = ShowWindow(self.hwnd, if visible { SW_SHOW } else { SW_HIDE });
-            let _ = PostMessageW(self.hwnd, RAMEN_WM_SETVISIBLE, visible as _, 0);
         }
     }
 }
@@ -1164,16 +1183,6 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             0
         },
 
-        RAMEN_WM_SETVISIBLE => {
-            let state = &mut *user_state(hwnd);
-            state.style.visible = wparam != 0;
-            let (dw_style, dw_style_ex) = style_to_bits(&state.style);
-            let _ = set_instance_storage(hwnd, GWL_STYLE, dw_style as _);
-            let _ = set_instance_storage(hwnd, GWL_EXSTYLE, dw_style_ex as _);
-            // doing this with SWP is really buggy fsr
-            0
-        },
-
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
@@ -1184,4 +1193,10 @@ impl Drop for Window {
             let _ = PostMessageW(self.hwnd, RAMEN_WM_DROP, 0, 0);
         }
     }
+}
+
+#[inline]
+unsafe fn ping_window_frame(hwnd: HWND) {
+    const MASK: UINT = SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER | SWP_NOZORDER | SWP_FRAMECHANGED;
+    let _ = SetWindowPos(hwnd, ptr::null_mut(), 0, 0, 0, 0, MASK);
 }
