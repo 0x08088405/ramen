@@ -491,6 +491,7 @@ impl Window {
             let _g = sync::mutex_lock(&state.event_sync);
             state.style.borderless = borderless;
             let (dw_style, dw_style_ex) = style_to_bits(&state.style);
+            std::mem::drop(_g);
             let _ = set_instance_storage(self.hwnd, GWL_STYLE, dw_style as _);
             let _ = set_instance_storage(self.hwnd, GWL_EXSTYLE, dw_style_ex as _);
             ping_window_frame(self.hwnd);
@@ -503,6 +504,7 @@ impl Window {
             let _g = sync::mutex_lock(&state.event_sync);
             state.style.resizable = resizable;
             let (dw_style, dw_style_ex) = style_to_bits(&state.style);
+            std::mem::drop(_g);
             let _ = set_instance_storage(self.hwnd, GWL_STYLE, dw_style as _);
             let _ = set_instance_storage(self.hwnd, GWL_EXSTYLE, dw_style_ex as _);
             ping_window_frame(self.hwnd);
@@ -531,6 +533,7 @@ impl Window {
             let state = &*self.state.get();
             let _g = sync::mutex_lock(&state.event_sync);
             let (dw_style, dw_style_ex) = style_to_bits(&state.style);
+            std::mem::drop(_g);
             let (_, RECT { top, left, .. }) = adjust_window_for_dpi(WIN32.get(), (0, 0), dw_style, dw_style_ex, state.dpi);
             let xx = x + left as i16;
             let yy = y + top as i16;
@@ -544,6 +547,7 @@ impl Window {
             let _g = sync::mutex_lock(&state.event_sync);
             let (dw_style, dw_style_ex) = style_to_bits(&state.style);
             let ((width, height), _) = adjust_window_for_dpi(WIN32.get(), (w, h), dw_style, dw_style_ex, state.dpi);
+            std::mem::drop(_g);
             let _ = SetWindowPos(self.hwnd, ptr::null_mut(), 0, 0, width as _, height as _, SWP_NOMOVE);
         }
     }
