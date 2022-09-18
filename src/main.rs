@@ -45,6 +45,7 @@ pub fn f(connection: Connection) {
             return;
         },
     };
+    let mut borderless = false;
     'program: loop {
         window.poll_events();
         for event in window.events() {
@@ -81,6 +82,10 @@ pub fn f(connection: Connection) {
                         Key::P => window.set_position((10, 10)),
                         Key::S => window.set_size((800, 608)),
                         Key::R => window.set_resizable(false),
+                        Key::B => {
+                            borderless = !borderless;
+                            window.set_borderless(borderless);
+                        },
                         _ => (),
                     }
                 },

@@ -37,6 +37,7 @@ struct Atoms {
     _net_wm_state_maximized_horz: xcb_atom_t,
     _net_wm_state_maximized_vert: xcb_atom_t,
     _net_wm_state_hidden: xcb_atom_t,
+    _motif_wm_hints: xcb_atom_t,
 }
 
 #[derive(Clone, Copy)]
@@ -162,7 +163,7 @@ unsafe impl Send for Connection {}
 
 impl Atoms {
     unsafe fn new(connection: *mut xcb_connection_t) -> Result<Self, Error> {
-        const N_ATOMS: usize = 11;
+        const N_ATOMS: usize = 12;
         let mut atom_replies = [0 as c_uint; N_ATOMS];
         let mut atoms = [0 as xcb_atom_t; N_ATOMS];
         macro_rules! atom {
@@ -181,6 +182,7 @@ impl Atoms {
         atom!(8, "_NET_WM_STATE_MAXIMIZED_HORZ");
         atom!(9, "_NET_WM_STATE_MAXIMIZED_VERT");
         atom!(10, "_NET_WM_STATE_HIDDEN");
+        atom!(11, "_MOTIF_WM_HINTS");
         for (r, seq) in atoms.iter_mut().zip(atom_replies.into_iter()) {
             let mut err: *mut xcb_generic_error_t = std::ptr::null_mut();
             let reply = xcb_intern_atom_reply(connection, seq, &mut err);
@@ -206,6 +208,7 @@ impl Atoms {
             _net_wm_state_maximized_horz: atoms[8],
             _net_wm_state_maximized_vert: atoms[9],
             _net_wm_state_hidden: atoms[10],
+            _motif_wm_hints: atoms[11],
         })
     }
 }
@@ -221,6 +224,7 @@ pub(crate) struct WindowDetails {
     event_buffer: Vec<Event>,
     parent: xcb_window_t,
     position: (i16, i16),
+    borderless: AtomicBool,
     resizable: AtomicBool,
     size: (u16, u16),
     state_maximised: (bool, bool), // horz vert
@@ -437,6 +441,7 @@ impl Window {
                     event_buffer: Vec::with_capacity(QUEUE_SIZE),
                     parent: root,
                     position: (x, y),
+                    borderless: AtomicBool::new(builder.style.borderless),
                     resizable: AtomicBool::new(builder.style.resizable),
                     size: (width, height),
                     state_maximised: (false, false),
@@ -444,6 +449,7 @@ impl Window {
                 },
             };
 
+            window.set_borderless(builder.style.borderless);
             set_wm_normal_hints(c, &window.details, window.details.size);
 
             Ok(window)
@@ -528,6 +534,13 @@ impl Window {
         }
     }
 
+    pub(crate) fn set_borderless(&self, borderless: bool) {
+        let mut connection_ = mutex_lock(&self.connection.0);
+        let connection = &mut connection_;
+        let _old = self.details.borderless.swap(borderless, atomic::Ordering::SeqCst);
+        unsafe { set_mwm_hints(connection.details.connection, &connection.details, &self.details) };
+    }
+
     pub(crate) fn set_resizable(&self, resizable: bool) {
         let mut connection_ = mutex_lock(&self.connection.0);
         let connection = &mut connection_;
@@ -575,6 +588,31 @@ impl Drop for Window {
             let _ = xcb_flush(connection.details.connection);
         }
     }
+}
+
+unsafe fn set_mwm_hints(
+    c: *mut xcb_connection_t,
+    cdetails: &ConnectionDetails,
+    wdetails: &WindowDetails,
+) {
+    let borderless = wdetails.borderless.load(atomic::Ordering::SeqCst);
+    let hints = MwmHints {
+        flags: MWM_HINTS_DECORATIONS,
+        functions: 0,
+        decorations: if borderless { 0 } else { MWM_DECOR_ALL },
+        input_mode: 0,
+        status: 0,
+    };
+    _ = xcb_change_property(
+        c,
+        XCB_PROP_MODE_REPLACE,
+        wdetails.handle,
+        cdetails.atoms._motif_wm_hints,
+        cdetails.atoms._motif_wm_hints,
+        32,
+        std::mem::size_of_val(&hints) as u32 / 4,
+        (&hints) as *const _ as _,
+    );
 }
 
 unsafe fn set_wm_normal_hints(c: *mut xcb_connection_t, details: &WindowDetails, size: (u16, u16)) {

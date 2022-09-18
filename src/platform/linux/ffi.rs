@@ -557,3 +557,25 @@ mod input {
         pub(in super::super) same_screen: u8,
     }
 }
+
+
+// Borrows from Xm/MwmUtil.h (see VendorShell, XmNmwmDecorations)
+
+#[repr(C)]
+pub(crate) struct MwmHints {
+    pub(crate) flags: u32,
+    pub(crate) functions: u32,
+    pub(crate) decorations: u32,
+    pub(crate) input_mode: u32,
+    pub(crate) status: u32,
+}
+
+pub(crate) const MWM_HINTS_DECORATIONS: u32 = 1 << 1;
+
+pub(crate) const MWM_DECOR_ALL: u32 = 1;
+// pub(crate) const MWM_DECOR_BORDER: u32 = 1 << 1;
+// pub(crate) const MWM_DECOR_RESIZEH: u32 = 1 << 2;
+// pub(crate) const MWM_DECOR_TITLE: u32 = 1 << 3;
+// pub(crate) const MWM_DECOR_MENU: u32 = 1 << 4;
+// pub(crate) const MWM_DECOR_MINIMIZE: u32 = 1 << 5;
+// pub(crate) const MWM_DECOR_MAXIMIZE: u32 = 1 << 6;

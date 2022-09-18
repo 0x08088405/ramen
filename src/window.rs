@@ -38,6 +38,10 @@ impl Window {
         self.0.poll_events()
     }
 
+    pub fn set_borderless(&self, borderless: bool) {
+        self.0.set_borderless(borderless)
+    }
+
     /// Sets whether the window is maximised.
     /// 
     /// Calling `set_maximised(true)` on a maximised window, or `set_maximised(false)` on an un-maximised window,
