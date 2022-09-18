@@ -38,6 +38,11 @@ impl Window {
         self.0.poll_events()
     }
 
+    /// Sets whether the window has any decorational border around it.
+    /// 
+    /// This function does not complete immediately - it simply sends a request to the operating system. The operating
+    /// system may or may not choose to honour your request. If it does honour the request, it is guaranteed to have
+    /// completed by the next time `poll_events()` returns after being called for this window.
     pub fn set_borderless(&self, borderless: bool) {
         self.0.set_borderless(borderless)
     }
@@ -55,7 +60,7 @@ impl Window {
         self.0.set_maximised(maximised)
     }
 
-    /// Sets the position of the outer top-left of the window, including any decorations it may have.
+    /// Sets the position of the top-left of the window's inner drawable area.
     /// 
     /// The position is measured in pixels relative to the top-left of the user's desktop, across all monitors.
     /// 
@@ -67,6 +72,12 @@ impl Window {
         self.0.set_position(position)
     }
 
+    /// Sets whether the window is resizable either by dragging the outer area or by maximising it.
+    /// 
+    /// Note that setting this to `false` does not completely prevent the window from changing size; it only prevents
+    /// the user from resizing it via the normal methods.
+    /// 
+    /// Calling this function is likely to cause visual bugs in X11-based window managers.
     pub fn set_resizable(&self, resizable: bool) {
         self.0.set_resizable(resizable)
     }

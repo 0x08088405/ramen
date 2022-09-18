@@ -18,8 +18,9 @@ pub enum Event {
     /// The window was minimised (`true`) or un-minimised (`false`).
     Minimise(bool),
 
-    /// The window was moved to a new position on the screen. The position is reported in pixels relative to the
-    /// top-left of the user's desktop.
+    /// The window was moved to a new position on the screen. The position relates to the top-left of the window's
+    /// inner drawable area, excluding any borders or decorations, and is reported in pixels relative to the top-left
+    /// of the user's desktop.
     Move((i16, i16)),
 
     /// The window was resized. The width and height are reported in pixels.

@@ -50,9 +50,13 @@ impl Builder {
         self
     }
 
-    /// Specifies the control buttons this window should have.
+    /// Hints at what control buttons this window should have. Window Managers may override any of these settings.
     /// 
-    /// Defaults to `None`, meaning the controls will be decided by the operating system.
+    /// Even if `maximise` is `true`, ramen will not show the `maximise` button while the window is not resizable.
+    /// 
+    /// A value of `None` indicates that there should be no menu at all.
+    /// 
+    /// By default, all controls are set to `true`.
     pub fn controls(mut self, controls: Option<Controls>) -> Self {
         self.style.controls = controls;
         self
@@ -71,7 +75,8 @@ impl Builder {
 
     /// Sets whether the window can be initially interactively resized by the user.
     ///
-    /// Note that this being `false` does not prevent it being done via API calls.
+    /// Note that this being `false` does not completely prevent a window from changing size; it only prevents the user
+    /// from resizing it via the normal methods.
     ///
     /// Defaults to `true`.
     pub fn resizable(mut self, resizable: bool) -> Self {
@@ -94,18 +99,20 @@ impl Builder {
     /// 
     /// If the user has multiple monitors, the primary monitor will usually be selected.
     /// 
+    /// This setting will have no effect if `visible` is set to `false`.
+    /// 
     /// Defaults to `false`.
     pub fn maximised(mut self, maximised: bool) -> Self {
         self.maximised = maximised;
         self
     }
 
-    /// Sets the position of the top-left of the window on the screen. If `None`, the operating system will decide
-    /// where to place the window.
+    /// Sets the screen position of the top-left of the window's inner drawable area, in pixels, relative to the
+    /// top-left of the user's desktop. If `None`, the operating system will decide where to place the window.
     /// 
     /// While it is necessary to pass a position to the X11 backend, it is unlikely to be used, since almost every
     /// X11-based Window Manager will ignore this and use its own positioning logic. If the Window Manager places
-    /// the window in a different place, you will receive a `Move` event.
+    /// the window in a different position to this one, you will receive a `Move` event.
     /// 
     /// Defaults to `None`.
     pub fn position(mut self, position: Option<(i16, i16)>) -> Self {
