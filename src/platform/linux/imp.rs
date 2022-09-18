@@ -609,7 +609,7 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
                         details.connection,
                         false.into(),
                         event.window,
-                        XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT,
+                        XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT,
                         (event as *const _) as *const i8,
                     ));
                     let _ = xcb_flush(details.connection); // Makes sure the event is processed before we free it
@@ -844,7 +844,7 @@ unsafe fn internal_set_maximised(c: *mut xcb_connection_t, xid: xcb_window_t, de
         c,
         0,
         (*details.screen).root,
-        XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT,
+        XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT,
         (&client_message as *const _) as *const i8,
     ));
 }

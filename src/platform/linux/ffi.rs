@@ -161,6 +161,7 @@ pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
 #[cfg(feature = "input")]
 pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
 pub(super) const XCB_EVENT_MASK_STRUCTURE_NOTIFY: u32 = 131072;
+pub(super) const XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY: u32 = 524288;
 pub(super) const XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT: u32 = 1048576;
 pub(super) const XCB_EVENT_MASK_PROPERTY_CHANGE: u32 = 4194304;
 #[cfg(not(feature = "input"))]
