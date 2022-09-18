@@ -31,7 +31,6 @@ pub fn f(connection: Connection) {
         .into_builder()
         .controls(Some(ramen::window::Controls::new()))
         .borderless(borderless)
-        .controls(None)
         .class_name("OpenGMK")
         .resizable(resizable)
         .title("simple window, חלון הומו טיפש,彼の死を心から願っています🙏")
