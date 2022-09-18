@@ -614,7 +614,6 @@ unsafe fn set_mwm_hints(
         hints.decorations |= MWM_DECOR_BORDER;
         hints.decorations |= MWM_DECOR_TITLE;
         hints.functions |= MWM_FUNC_MOVE;
-    } else {
         if style.resizable {
             hints.decorations |= MWM_DECOR_RESIZEH;
             hints.functions |= MWM_FUNC_RESIZE;
