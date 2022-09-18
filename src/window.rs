@@ -38,6 +38,15 @@ impl Window {
         self.0.poll_events()
     }
 
+    /// Sets whether the window is maximised.
+    /// 
+    /// Calling `set_maximised(true)` on a maximised window, or `set_maximised(false)` on an un-maximised window,
+    /// will have no effect.
+    /// 
+    /// This function does not complete immediately - it simply sends a request to the operating system. The operating
+    /// system may or may not choose to honour your request. If it does honour the request, it is guaranteed to have
+    /// completed by the next time `poll_events()` returns after being called for this window, and the resulting set of
+    /// events will contain a `Maximise` event if the window was maximised as a result of calling this function.
     pub fn set_maximised(&self, maximised: bool) {
         self.0.set_maximised(maximised)
     }
@@ -64,6 +73,11 @@ impl Window {
         self.0.set_size(size)
     }
 
+    /// Sets the title of the window, which will usually displayed in a title bar above the window.
+    /// 
+    /// This function does not complete immediately - it simply sends a request to the operating system. The operating
+    /// system may or may not choose to honour your request. If it does honour the request, it is guaranteed to have
+    /// completed by the next time `poll_events()` returns after being called for this window.
     pub fn set_title(&self, title: &str) {
         self.0.set_title(title)
     }
