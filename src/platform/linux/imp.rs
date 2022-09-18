@@ -662,41 +662,38 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
             if event.atom == details.atoms._net_wm_state {
                 match event.state {
                     XCB_PROPERTY_NEW_VALUE => {
-                        let mut maximised = (false, false);
-                        let mut minimised = false;
-                        for i in 0.. {
-                            let prop = xcb_get_property_reply(details.connection, xcb_get_property(
-                                details.connection,
-                                0,
-                                window.handle,
-                                details.atoms._net_wm_state,
-                                XCB_ATOM_ATOM,
-                                i * 64,
-                                64,
-                            ), std::ptr::null_mut());
-                            if prop.is_null() {
-                                return;
-                            }
-                            let len = xcb_get_property_value_length(prop);
-                            let data = xcb_get_property_value(prop) as *const xcb_atom_t;
-                            let len = match usize::try_from(len / 4) {
-                                Ok(l) => l,
-                                _ => break,
-                            };
-                            for atom in std::slice::from_raw_parts(data, len).iter() {
-                                if *atom == details.atoms._net_wm_state_maximized_horz {
-                                    maximised.0 = true;
-                                } else if *atom == details.atoms._net_wm_state_maximized_vert {
-                                    maximised.1 = true;
-                                } else if *atom == details.atoms._net_wm_state_hidden {
-                                    minimised = true;
-                                }
-                            }
-                            free(prop.cast());
-                            if len < 64 {
-                                break;
-                            }
+                        let prop = xcb_get_property_reply(details.connection, xcb_get_property(
+                            details.connection,
+                            0,
+                            window.handle,
+                            details.atoms._net_wm_state,
+                            XCB_ATOM_ATOM,
+                            0,
+                            !0,
+                        ), std::ptr::null_mut());
+                        if prop.is_null() {
+                            return;
                         }
+                        if (*prop).r#type != XCB_ATOM_ATOM || (*prop).format != 32 {
+                            free(prop.cast());
+                            return;
+                        }
+                        let len = xcb_get_property_value_length(prop);
+                        let data = xcb_get_property_value(prop) as *const xcb_atom_t;
+                        let len = match usize::try_from(len / 4) {
+                            Ok(l) => l,
+                            _ => {
+                                free(prop.cast());
+                                return
+                            },
+                        };
+                        let data_slice = std::slice::from_raw_parts(data, len);
+                        let minimised = data_slice.iter().any(|x| *x == details.atoms._net_wm_state_hidden);
+                        let maximised = (
+                            data_slice.iter().any(|x| *x == details.atoms._net_wm_state_maximized_horz),
+                            data_slice.iter().any(|x| *x == details.atoms._net_wm_state_maximized_vert),
+                        );
+                        free(prop.cast());
 
                         if minimised && !window.state_minimised {
                             if window.state_maximised == (true, true) {

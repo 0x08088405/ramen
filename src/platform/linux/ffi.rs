@@ -234,7 +234,7 @@ pub(super) struct xcb_intern_atom_reply_t {
 #[repr(C)]
 pub(super) struct xcb_get_property_reply_t {
     pub(super) response_type: u8,
-    pub(super) pad0: u8,
+    pub(super) format: u8,
     pub(super) sequence: u16,
     pub(super) length: u32,
     pub(super) r#type: xcb_atom_t,
@@ -247,7 +247,7 @@ pub(super) struct xcb_get_property_reply_t {
 #[repr(C)]
 pub(super) struct xcb_query_extension_reply_t {
     pub(super) response_type: u8,
-    pub(super) pad0: u8,
+    pub(super) _pad0: u8,
     pub(super) sequence: u16,
     pub(super) length: u32,
     pub(super) present: u8,
