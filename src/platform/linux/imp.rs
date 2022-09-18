@@ -36,6 +36,7 @@ struct Atoms {
     _net_wm_state: xcb_atom_t,
     _net_wm_state_maximized_horz: xcb_atom_t,
     _net_wm_state_maximized_vert: xcb_atom_t,
+    _net_wm_state_hidden: xcb_atom_t,
 }
 
 #[derive(Clone, Copy)]
@@ -161,7 +162,7 @@ unsafe impl Send for Connection {}
 
 impl Atoms {
     unsafe fn new(connection: *mut xcb_connection_t) -> Result<Self, Error> {
-        const N_ATOMS: usize = 10;
+        const N_ATOMS: usize = 11;
         let mut atom_replies = [0 as c_uint; N_ATOMS];
         let mut atoms = [0 as xcb_atom_t; N_ATOMS];
         macro_rules! atom {
@@ -179,6 +180,7 @@ impl Atoms {
         atom!(7, "_NET_WM_STATE");
         atom!(8, "_NET_WM_STATE_MAXIMIZED_HORZ");
         atom!(9, "_NET_WM_STATE_MAXIMIZED_VERT");
+        atom!(10, "_NET_WM_STATE_HIDDEN");
         for (r, seq) in atoms.iter_mut().zip(atom_replies.into_iter()) {
             let mut err: *mut xcb_generic_error_t = std::ptr::null_mut();
             let reply = xcb_intern_atom_reply(connection, seq, &mut err);
@@ -203,6 +205,7 @@ impl Atoms {
             _net_wm_state: atoms[7],
             _net_wm_state_maximized_horz: atoms[8],
             _net_wm_state_maximized_vert: atoms[9],
+            _net_wm_state_hidden: atoms[10],
         })
     }
 }
@@ -219,6 +222,8 @@ pub(crate) struct WindowDetails {
     parent: xcb_window_t,
     position: (i16, i16),
     size: (u16, u16),
+    state_maximised: (bool, bool), // horz vert
+    state_minimised: bool,
 }
 
 impl Window {
@@ -261,11 +266,12 @@ impl Window {
             }
 
             // Create the new X window
+            const REGULAR_MASK: u32 = XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_PROPERTY_CHANGE;
             // ButtonPress is exclusive, so we request it in CreateWindow to make sure we get it first
             #[cfg(feature = "input")]
-            const EVENT_MASK: u32 = XCB_EVENT_MASK_BUTTON_PRESS | XCB_EVENT_MASK_STRUCTURE_NOTIFY;
+            const EVENT_MASK: u32 = XCB_EVENT_MASK_BUTTON_PRESS | REGULAR_MASK;
             #[cfg(not(feature = "input"))]
-            const EVENT_MASK: u32 = XCB_EVENT_MASK_FOCUS_CHANGE | XCB_EVENT_MASK_STRUCTURE_NOTIFY;
+            const EVENT_MASK: u32 = XCB_EVENT_MASK_FOCUS_CHANGE | REGULAR_MASK;
             const VALUE_MASK: u32 = XCB_CW_EVENT_MASK;
             const VALUE_LIST: &[u32] = &[EVENT_MASK];
 
@@ -430,6 +436,8 @@ impl Window {
                     parent: root,
                     position: (x, y),
                     size: (width, height),
+                    state_maximised: (false, false),
+                    state_minimised: false,
                 },
             })
         }
@@ -565,6 +573,7 @@ unsafe fn get_event_window(ev: *mut xcb_generic_event_t, details: &ConnectionDet
         XCB_UNMAP_NOTIFY => Some((*(ev as *mut xcb_unmap_notify_event_t)).window),
         XCB_REPARENT_NOTIFY => Some((*(ev as *mut xcb_reparent_notify_event_t)).window),
         XCB_CONFIGURE_NOTIFY => Some((*(ev as *mut xcb_configure_notify_event_t)).window),
+        XCB_PROPERTY_NOTIFY => Some((*(ev as *mut xcb_property_notify_event_t)).window),
         #[cfg(feature = "input")]
         XCB_GE_GENERIC => {
             let event = &*(ev as *mut xcb_ge_generic_event_t);
@@ -646,6 +655,82 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
             if window.position != xy {
                 window.position = xy;
                 window.event_buffer.push(Event::Move(xy));
+            }
+        },
+        XCB_PROPERTY_NOTIFY => {
+            let event = &*(ev as *mut xcb_property_notify_event_t);
+            if event.atom == details.atoms._net_wm_state {
+                match event.state {
+                    XCB_PROPERTY_NEW_VALUE => {
+                        let mut maximised = (false, false);
+                        let mut minimised = false;
+                        for i in 0.. {
+                            let prop = xcb_get_property_reply(details.connection, xcb_get_property(
+                                details.connection,
+                                0,
+                                window.handle,
+                                details.atoms._net_wm_state,
+                                XCB_ATOM_ATOM,
+                                i * 64,
+                                64,
+                            ), std::ptr::null_mut());
+                            if prop.is_null() {
+                                return;
+                            }
+                            let len = xcb_get_property_value_length(prop);
+                            let data = xcb_get_property_value(prop) as *const xcb_atom_t;
+                            let len = match usize::try_from(len / 4) {
+                                Ok(l) => l,
+                                _ => break,
+                            };
+                            for atom in std::slice::from_raw_parts(data, len).iter() {
+                                if *atom == details.atoms._net_wm_state_maximized_horz {
+                                    maximised.0 = true;
+                                } else if *atom == details.atoms._net_wm_state_maximized_vert {
+                                    maximised.1 = true;
+                                } else if *atom == details.atoms._net_wm_state_hidden {
+                                    minimised = true;
+                                }
+                            }
+                            free(prop.cast());
+                            if len < 64 {
+                                break;
+                            }
+                        }
+
+                        if minimised && !window.state_minimised {
+                            if window.state_maximised == (true, true) {
+                                window.event_buffer.push(Event::Maximise(false));
+                            }
+                            window.event_buffer.push(Event::Minimise(true));
+                        } else if !minimised && window.state_minimised {
+                            window.event_buffer.push(Event::Minimise(false));
+                            if maximised == (true, true) {
+                                window.event_buffer.push(Event::Maximise(true));
+                            }
+                        } else if !minimised {
+                            if maximised == (true, true) && window.state_maximised != (true, true) {
+                                window.event_buffer.push(Event::Maximise(true));
+                            } else if maximised != (true, true) && window.state_maximised == (true, true) {
+                                window.event_buffer.push(Event::Maximise(false));
+                            }
+                        }
+
+                        window.state_maximised = maximised;
+                        window.state_minimised = minimised;
+                    },
+                    XCB_PROPERTY_DELETE => {
+                        // The whole state property got deleted for some reason?
+                        if window.state_minimised {
+                            window.event_buffer.push(Event::Minimise(false));
+                        } else if window.state_maximised == (true, true) {
+                            window.event_buffer.push(Event::Maximise(false));
+                        }
+                        window.state_minimised = false;
+                        window.state_maximised = (false, false);
+                    },
+                    _ => (),
+                }
             }
         },
         XCB_MAP_NOTIFY => window.event_buffer.push(Event::Visible(true)),

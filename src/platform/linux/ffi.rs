@@ -96,6 +96,10 @@ load! {
         fn xcb_poll_for_queued_event(c: *mut xcb_connection_t) -> *mut xcb_generic_event_t;
         fn xcb_send_event_checked(c: *mut xcb_connection_t, propagate: u8, destination: xcb_window_t, event_mask: u32, event: *const c_char) -> c_uint;
         fn xcb_destroy_window(c: *mut xcb_connection_t, xid: xcb_window_t) -> c_uint;
+        fn xcb_get_property(c: *mut xcb_connection_t, delete: u8, window: xcb_window_t, property: xcb_atom_t, r#type: xcb_atom_t, long_offset: u32, long_length: u32) -> c_uint;
+        fn xcb_get_property_reply(c: *mut xcb_connection_t, sequence: c_uint, e: *mut *mut xcb_generic_error_t) -> *mut xcb_get_property_reply_t;
+        fn xcb_get_property_value(reply: *const xcb_get_property_reply_t) -> *mut c_void;
+        fn xcb_get_property_value_length(reply: *const xcb_get_property_reply_t) -> c_int;
         #[cfg(feature = "input")]
         fn xcb_query_extension(c: *mut xcb_connection_t, name_len: u16, name: *const c_char) -> c_uint;
         #[cfg(feature = "input")]
@@ -137,6 +141,7 @@ pub(super) const XCB_UNMAP_NOTIFY: u8 = 18;
 pub(super) const XCB_MAP_NOTIFY: u8 = 19;
 pub(super) const XCB_REPARENT_NOTIFY: u8 = 21;
 pub(super) const XCB_CONFIGURE_NOTIFY: u8 = 22;
+pub(super) const XCB_PROPERTY_NOTIFY: u8 = 28;
 pub(super) const XCB_CLIENT_MESSAGE: u8 = 33;
 #[cfg(feature = "input")]
 pub(super) const XCB_GE_GENERIC: u8 = 35;
@@ -157,6 +162,7 @@ pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
 pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;
 pub(super) const XCB_EVENT_MASK_STRUCTURE_NOTIFY: u32 = 131072;
 pub(super) const XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT: u32 = 1048576;
+pub(super) const XCB_EVENT_MASK_PROPERTY_CHANGE: u32 = 4194304;
 #[cfg(not(feature = "input"))]
 pub(super) const XCB_EVENT_MASK_FOCUS_CHANGE: u32 = 2097152;
 
@@ -223,6 +229,18 @@ pub(super) struct xcb_intern_atom_reply_t {
     pub(super) sequence: u16,
     pub(super) length: u32,
     pub(super) atom: xcb_atom_t,
+}
+
+#[repr(C)]
+pub(super) struct xcb_get_property_reply_t {
+    pub(super) response_type: u8,
+    pub(super) pad0: u8,
+    pub(super) sequence: u16,
+    pub(super) length: u32,
+    pub(super) r#type: xcb_atom_t,
+    pub(super) bytes_after: u32,
+    pub(super) value_len: u32,
+    pub(super) _pad0: [u8; 12],
 }
 
 #[cfg(feature = "input")]
@@ -321,6 +339,20 @@ pub(super) struct xcb_unmap_notify_event_t {
 }
 
 #[repr(C)]
+pub(super) struct xcb_property_notify_event_t {
+    pub(super) response_type: u8,
+    pub(super) _pad0: u8,
+    pub(super) sequence: u16,
+    pub(super) window: xcb_window_t,
+    pub(super) atom: xcb_atom_t,
+    pub(super) time: xcb_timestamp_t,
+    pub(super) state: u8,
+    pub(super) _pad1: [u8; 3],
+}
+pub(super) const XCB_PROPERTY_NEW_VALUE: u8 = 0;
+pub(super) const XCB_PROPERTY_DELETE: u8 = 1;
+
+#[repr(C)]
 pub(crate) union ClientData {
     pub(crate) data8: [u8; 20],
     pub(crate) data16: [u16; 10],
@@ -339,13 +371,14 @@ pub(super) struct xcb_ge_generic_event_t {
     pub(super) full_sequence: u32,
 }
 
+pub(super) type xcb_timestamp_t = u32;
+
 #[cfg(feature = "input")]
 mod input {
     use super::*;
     pub(in super::super) use libc::c_ulong;
 
     pub(in super::super) type xcb_input_device_id_t = u16;
-    pub(in super::super) type xcb_timestamp_t = u32;
 
     //pub(in super::super) type xcb_input_xi_event_mask_t = u32;
     //pub(in super::super) const XCB_INPUT_XI_EVENT_MASK_DEVICE_CHANGED: u32 = 2;
