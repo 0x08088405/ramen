@@ -418,6 +418,8 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
         style: builder.style,
     }));
 
+    let _ = (&*window_state.get()).mouse_tracked;
+
     let create_params = WindowCreateParams {
         state: window_state.get(),
     };
@@ -1044,8 +1046,6 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
 
         // Same as `WM_KEYDOWN` & `WM_KEYUP` but with a few horrific bitfield quirks.
         WM_SYSKEYDOWN | WM_SYSKEYUP => {
-            let state = &mut *user_state(hwnd);
-
             // As a side-effect of handling "system keys", we actually override Alt+F4.
             // It's re-implemented here, because it's usually expected that Alt+F4 does something.
             if wparam & 0xFF == VK_F4 as WPARAM && lparam & (1 << 29) != 0 {
@@ -1066,6 +1066,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             // F10 doesn't even set any bit because there's no F10 bit, so you trust that one too.
             #[cfg(feature = "input")]
             if let Some(event) = sys_key_event(wparam, lparam) {
+                let state = &mut *user_state(hwnd);
                 state.dispatch_event(event);
             }
 
@@ -1100,6 +1101,20 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
                 state.dispatch_event(Event::Input(char::from_u32_unchecked(wparam as _)));
             }
             brony_detected.into()
+        },
+
+        WM_MOUSEWHEEL => {
+            #[cfg(feature = "input")]
+            {
+                let state = &mut *user_state(hwnd);
+                let delta = (wparam >> 16) as u16 as i16;
+                if delta > 0 {
+                    state.dispatch_event(Event::ScrollUp);
+                } else if delta < 0 {
+                    state.dispatch_event(Event::ScrollDown);
+                }
+            }
+            0
         },
 
         WM_MOUSEMOVE => {
