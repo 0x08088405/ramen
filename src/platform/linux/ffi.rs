@@ -127,7 +127,7 @@ pub(super) enum EventQueueOwner { XlibOwnsEventQueue = 0, XCBOwnsEventQueue }
 pub(super) type xcb_atom_t = u32;
 pub(super) type xcb_colormap_t = u32;
 pub(super) type xcb_visualid_t = u32;
-pub(super) type xcb_window_t = u32;
+pub type xcb_window_t = u32;
 
 pub(super) const XCB_WINDOW_CLASS_INPUT_OUTPUT: u16 = 1;
 pub(super) const XCB_COPY_FROM_PARENT: u8 = 0;

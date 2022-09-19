@@ -557,6 +557,10 @@ impl Window {
             let _ = ShowWindow(self.hwnd, if visible { SW_SHOW } else { SW_HIDE });
         }
     }
+
+    pub(crate) fn hwnd(&self) -> HWND {
+        self.hwnd
+    }
 }
 
 impl WindowState {

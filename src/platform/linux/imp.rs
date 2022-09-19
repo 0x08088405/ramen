@@ -582,6 +582,10 @@ impl Window {
             }
         }
     }
+
+    pub(crate) fn xid(&self) -> xcb_window_t {
+        self.details.handle
+    }
 }
 
 impl Drop for Window {

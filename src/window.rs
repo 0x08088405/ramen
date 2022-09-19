@@ -110,4 +110,16 @@ impl Window {
     pub fn set_visible(&self, visible: bool) {
         self.0.set_visible(visible)
     }
+
+    /// Returns the win32 `HWND` of this window. This function is only available on Windows.
+    #[cfg(target_os = "windows")]
+    pub fn hwnd(&self) -> crate::platform::win32::HWND {
+        self.0.hwnd()
+    }
+
+    /// Returns the X11 xid of this window. This function is only available on Linux backends.
+    #[cfg(target_os = "linux")]
+    pub fn xid(&self) -> crate::platform::linux::xcb_window_t {
+        self.0.xid()
+    }
 }
