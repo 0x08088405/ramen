@@ -113,6 +113,14 @@ pub fn f(connection: Connection) {
                     println!("Mouse move: {:?}", t);
                 },
                 #[cfg(feature = "input")]
+                Event::ScrollUp => {
+                    println!("Mouse scrolled up");
+                },
+                #[cfg(feature = "input")]
+                Event::ScrollDown => {
+                    println!("Mouse scrolled down");
+                },
+                #[cfg(feature = "input")]
                 Event::Input(code) => {
                     println!("Input: {}", code);
                 },

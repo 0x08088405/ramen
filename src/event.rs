@@ -71,6 +71,16 @@ pub enum Event {
     #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
     MouseMove((u16, u16)),
 
+    /// The mouse wheel was scrolled up, away from the user.
+    #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
+    ScrollUp,
+
+    /// The mouse wheel was scrolled down, towards the user.
+    #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
+    #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
+    ScrollDown,
+
     /// The mouse has entered the client area of the window.
     #[cfg_attr(feature = "nightly-rustdoc", doc(cfg(feature = "input")))]
     #[cfg_attr(not(feature = "nightly-rustdoc"), cfg(feature = "input"))]
