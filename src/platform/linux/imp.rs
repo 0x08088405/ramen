@@ -906,6 +906,8 @@ unsafe fn process_event(ev: *mut xcb_generic_event_t, window: &mut WindowDetails
                             1 => window.event_buffer.push(f(MouseButton::Left)),
                             2 => window.event_buffer.push(f(MouseButton::Middle)),
                             3 => window.event_buffer.push(f(MouseButton::Right)),
+                            4 if e == XCB_INPUT_BUTTON_PRESS => window.event_buffer.push(Event::ScrollUp),
+                            5 if e == XCB_INPUT_BUTTON_PRESS => window.event_buffer.push(Event::ScrollDown),
                             _ => (),
                         }
                     },
