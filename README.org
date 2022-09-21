@@ -1,8 +1,6 @@
 #+title: ramen
-#+author: viri
-#+email: hi@viri.moe
 
-/ramen/ (ラーメン) is a windowing library primarily designed for use in game engines and similar performance-critical real-time applications. It is also intended to act as a reference for implementations of graphics windowing in other languages, and to document otherwise poorly or plain undocumented APIs.
+This is a windowing library that was once meant to be pretty nice but now serves as a backbone for OpenGMK, mostly hacked together in a few weeks. I do not recommend using it for any purpose.
 
 * Features
 - =input= :: Enabled by default, provides events for keyboard and mouse input.
