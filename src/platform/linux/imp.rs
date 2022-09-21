@@ -20,6 +20,7 @@ struct ConnectionDetails {
     display: *mut Display,
     connection: *mut xcb_connection_t,
     screen: *mut xcb_screen_t,
+    screenid: u32,
     atoms: Atoms,
     extensions: Extensions,
 }
@@ -125,6 +126,7 @@ impl Connection {
                     display,
                     connection,
                     screen,
+                    screenid: screen_num as _,
                     atoms,
                     extensions: Extensions {
                         #[cfg(feature = "input")]
@@ -137,7 +139,11 @@ impl Connection {
         }
     }
 
-    pub fn xdisplay(&self) -> *mut Display {
+    pub(crate) fn xscreenid(&self) -> u32 {
+        self.details.screenid
+    }
+
+    pub(crate) fn xdisplay(&self) -> *mut Display {
         self.details.display
     }
 

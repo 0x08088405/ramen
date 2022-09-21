@@ -36,6 +36,12 @@ impl Connection {
     }
 
     #[cfg(unix)]
+    pub fn xscreenid(&self) -> u32 {
+        let g = sync::mutex_lock(&*self.0);
+        g.xscreenid()
+    }
+
+    #[cfg(unix)]
     pub fn xdisplay(&self) -> *mut crate::platform::linux::Display {
         let g = sync::mutex_lock(&*self.0);
         g.xdisplay()
