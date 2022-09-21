@@ -1,4 +1,4 @@
-use crate::{error::Error, platform::imp, window::Builder};
+use crate::{error::Error, platform::imp, util::sync, window::Builder};
 use crate::util::sync::Mutex;
 use std::sync::Arc;
 
@@ -33,5 +33,11 @@ impl Connection {
     /// optimisations. As such, this function should be preferred if the Connection is no longer needed.
     pub fn into_builder(self) -> Builder {
         Builder::new(self, None)
+    }
+
+    #[cfg(unix)]
+    pub fn xdisplay(&self) -> *mut crate::platform::linux::Display {
+        let g = sync::mutex_lock(&*self.0);
+        g.xdisplay()
     }
 }

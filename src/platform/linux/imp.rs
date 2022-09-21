@@ -137,6 +137,10 @@ impl Connection {
         }
     }
 
+    pub fn xdisplay(&self) -> *mut Display {
+        self.details.display
+    }
+
     // Helper wrapper for `xcb_connection_has_error` for use with `?`. Assumes pointer is valid.
     unsafe fn check(c: *mut xcb_connection_t) -> Result<(), Error> {
         let err = xcb_connection_has_error(c);

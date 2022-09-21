@@ -117,7 +117,7 @@ load! {
     }
 }
 
-pub(super) enum Display {}
+pub enum Display {}
 pub(super) enum xcb_setup_t {}
 pub(super) enum xcb_connection_t {}
 
