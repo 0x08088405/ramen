@@ -23,7 +23,7 @@ use std::{cell::UnsafeCell, mem, ptr};
 // Global immutable struct containing dynamically acquired API state
 static WIN32: LazyCell<Win32State> = LazyCell::new(Win32State::new);
 
-const BASE_DPI: UINT = 120;
+const BASE_DPI: UINT = 96;
 /// Custom window message
 const RAMEN_WM_CREATE: UINT = WM_USER + 0;
 const RAMEN_WM_DROP: UINT = WM_USER + 1;
@@ -73,6 +73,7 @@ struct Win32State {
     dl: Win32DL,
 }
 
+#[derive(PartialEq)]
 enum Win32DpiMode {
     Unsupported,
     System,
@@ -380,6 +381,7 @@ unsafe impl Sync for Window {}
 /// Parameters sent to `WM_NCCREATE` and `WM_CREATE`.
 struct WindowCreateParams {
     state: *mut WindowState,
+    wh: (u16, u16),
 }
 
 /// Volatile state which the `Window` and its thread both have a pointer to.
@@ -392,6 +394,7 @@ struct WindowState {
     is_max: bool,
     is_min: bool,
     style: Style,
+    wh: (u16, u16),
 }
 
 unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
@@ -404,7 +407,7 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
 
     let style = builder.style;
     let (dw_style, dw_style_ex) = style_to_bits(&style);
-    let dpi = BASE_DPI; // TODO: lol!
+    let dpi = BASE_DPI;
     let ((width, height), wrect) = adjust_window_for_dpi(WIN32.get(), builder.size, dw_style, dw_style_ex, dpi);
     let (pos_x, pos_y) = builder.position.map(|(x, y)| (x as LONG + wrect.left, y as LONG + wrect.top)).unwrap_or((CW_USEDEFAULT, CW_USEDEFAULT));
     let window_state = Box::new(UnsafeCell::new(WindowState {
@@ -416,12 +419,14 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
         is_max: false,
         is_min: false,
         style: builder.style,
+        wh: builder.size,
     }));
 
     let _ = (&*window_state.get()).mouse_tracked;
 
     let create_params = WindowCreateParams {
         state: window_state.get(),
+        wh: builder.size,
     };
 
     let hwnd = {
@@ -903,7 +908,22 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
         // lParam: `CREATESTRUCTW *` (in)
         // Return 0 to succeed `CreateWindowExW`, or -1 to destroy the window and return NULL.
         // See also: `WM_NCCREATE`
-        WM_CREATE => 0,
+        WM_CREATE => {
+            let param = &**(lparam as *const *const WindowCreateParams);
+            let state = &mut *param.state;
+            if WIN32.dpi_mode == Win32DpiMode::PerMonitorV1 || WIN32.dpi_mode == Win32DpiMode::PerMonitorV2 {
+                let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+                let mut dx: UINT = 0;
+                let mut dy: UINT = 0;
+                if WIN32.dl.GetDpiForMonitor(monitor, 0, &mut dx, &mut dy) == Some(0) && dx != state.dpi {
+                    state.dpi = dx;
+                    let (dw_style, dw_style_ex) = style_to_bits(&state.style);
+                    let ((width, height), _) = adjust_window_for_dpi(WIN32.get(), param.wh, dw_style, dw_style_ex, dx);
+                    let _ = SetWindowPos(hwnd, ptr::null_mut(), 0, 0, width as _, height as _, SWP_NOMOVE);
+                }
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        },
 
         // Received as the client area is being destroyed.
         // This event is received, then `WM_NCDESTROY`, and the window is gone after that.
@@ -942,6 +962,7 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
 
             // Minimize events give us a confusing new client size of (0, 0) so we ignore that
             if wparam != SIZE_MINIMIZED {
+                state.wh = (w as _, h as _);
                 state.dispatch_event(Event::Resize((w as _, h as _)));
             }
 
@@ -1028,7 +1049,9 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             // `lpCreateParams` is the first field, so `CREATESTRUCTW *` is `WindowCreateParams **`
             let params = &**(lparam as *const *const WindowCreateParams);
             let _ = set_instance_storage(hwnd, GWL_USERDATA, params.state as usize);
-            // TODO: add enablenonclientareadpiscaling here for pmv1 >win10 xxxx
+            if WIN32.dpi_mode == Win32DpiMode::PerMonitorV1 {
+                _ = WIN32.dl.EnableNonClientDpiScaling(hwnd);
+            }
             DefWindowProcW(hwnd, msg, wparam, lparam)
         },
 
@@ -1135,6 +1158,18 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
                     let _ = TrackMouseEvent(&mut tme);
                 }
                 state.dispatch_event(Event::MouseMove((x as _, y as _)));
+            }
+            0
+        },
+
+        WM_DPICHANGED => {
+            let dx = (wparam & 0xffff) as UINT;
+            let mut state = &mut *user_state(hwnd);
+            if WIN32.dpi_mode == Win32DpiMode::PerMonitorV1 || WIN32.dpi_mode == Win32DpiMode::PerMonitorV2 {
+                state.dpi = dx;
+                let (dw_style, dw_style_ex) = style_to_bits(&state.style);
+                let ((width, height), _) = adjust_window_for_dpi(WIN32.get(), state.wh, dw_style, dw_style_ex, dx);
+                let _ = SetWindowPos(hwnd, ptr::null_mut(), 0, 0, width as _, height as _, SWP_NOMOVE);
             }
             0
         },

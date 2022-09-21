@@ -151,6 +151,7 @@ pub(crate) const SWP_NOACTIVATE: UINT = 0x0010;
 pub(crate) const SWP_NOCOPYBITS: UINT = 0x0100;
 pub(crate) const SWP_NOMOVE: UINT = 0x0002;
 pub(crate) const SWP_NOOWNERZORDER: UINT = 0x0200;
+pub(crate) const MONITOR_DEFAULTTONEAREST: DWORD = 0x00000002;
 pub(crate) const SWP_NOREDRAW: UINT = 0x0008;
 pub(crate) const SWP_NOREPOSITION: UINT = SWP_NOOWNERZORDER;
 pub(crate) const SWP_NOSENDCHANGING: UINT = 0x0400;
@@ -347,6 +348,7 @@ pub(crate) const WM_QUIT: UINT = 0x0012;
 pub(crate) const WM_ENABLE: UINT = 0x000A;
 pub(crate) const WM_CHAR: UINT = 0x0102;
 pub(crate) const WM_UNICHAR: UINT = 0x0109;
+pub(crate) const WM_DPICHANGED: UINT = 0x02E0;
 pub(crate) const WM_SETREDRAW: UINT = 0x000B;
 pub(crate) const WM_SETTEXT: UINT = 0x000C;
 pub(crate) const WM_PAINT: UINT = 0x000F;
@@ -566,6 +568,7 @@ extern "system" {
     pub(crate) fn GetClassInfoExW(hinst: HINSTANCE, lpszClass: *const WCHAR, lpwcx: *mut WNDCLASSEXW) -> BOOL;
     pub(crate) fn RegisterClassExW(lpWndClass: *const WNDCLASSEXW) -> ATOM;
     pub(crate) fn SetWindowTextW(hWnd: HWND, lpString: *const WCHAR) -> BOOL;
+    pub(crate) fn MonitorFromWindow(hwnd: HWND, dwFlags: DWORD) -> HMONITOR;
     // Window management
     pub(crate) fn CreateWindowExW(
         dwExStyle: DWORD,
