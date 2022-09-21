@@ -287,22 +287,30 @@ impl Window {
             #[cfg(not(feature = "input"))]
             const EVENT_MASK: u32 = XCB_EVENT_MASK_FOCUS_CHANGE | REGULAR_MASK;
             const VALUE_MASK: u32 = XCB_CW_EVENT_MASK;
-            const VALUE_LIST: &[u32] = &[EVENT_MASK];
+
+            let cmap = builder.visual.map(|vi| {
+                let cmap = xcb_generate_id(c);
+                _ = xcb_create_colormap(c, 0, cmap, (*connection.details.screen).root, vi);
+                _ = xcb_flush(c);
+                cmap
+            });
+            let value_mask = if cmap.is_some() { VALUE_MASK|XCB_CW_COLORMAP } else { VALUE_MASK };
+            let value_list = if let Some(c) = cmap { (&[EVENT_MASK, c]).to_vec() } else { (&[EVENT_MASK]).to_vec() };
 
             let create_error = xcb_request_check(c, xcb_create_window_checked(
                 c,
-                XCB_COPY_FROM_PARENT,
+                builder.depth.unwrap_or(XCB_COPY_FROM_PARENT as _),
                 xid,
-                (*connection.details.screen).root, // idk
+                (*connection.details.screen).root,
                 x,
                 y,
                 width,
                 height,
                 0,
                 XCB_WINDOW_CLASS_INPUT_OUTPUT,
-                XCB_COPY_FROM_PARENT.into(),
-                VALUE_MASK,
-                VALUE_LIST.as_ptr(),
+                builder.visual.unwrap_or(XCB_COPY_FROM_PARENT.into()),
+                value_mask,
+                &value_list[0],
             ));
             if !create_error.is_null() {
                 // Reasons CreateWindow may fail are:

@@ -36,6 +36,7 @@ load! {
         fn xcb_flush(c: *mut xcb_connection_t) -> c_int;
         fn xcb_generate_id(c: *mut xcb_connection_t) -> u32;
         fn xcb_request_check(c: *mut xcb_connection_t, sequence: c_uint) -> *mut xcb_generic_error_t;
+        fn xcb_create_colormap(c: *mut xcb_connection_t, alloc: u8, mid: xcb_colormap_t, window: xcb_window_t, visual: xcb_visualid_t) -> c_uint;
         fn xcb_create_window_checked(
             c: *mut xcb_connection_t,
             depth: u8,
@@ -157,6 +158,7 @@ pub(super) const XCB_ATOM_STRING: xcb_atom_t = 31;
 pub(super) const XCB_ATOM_WM_NAME: xcb_atom_t = 39;
 pub(super) const XCB_ATOM_WM_CLASS: xcb_atom_t = 67;
 
+pub(super) const XCB_CW_COLORMAP: u32 = 8192;
 pub(super) const XCB_CW_EVENT_MASK: u32 = 2048;
 #[cfg(feature = "input")]
 pub(super) const XCB_EVENT_MASK_BUTTON_PRESS: u32 = 4;

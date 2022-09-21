@@ -18,6 +18,10 @@ pub struct Builder {
     pub(crate) size: (u16, u16),
     pub(crate) style: Style,
     pub(crate) title: Cow<'static, str>,
+    #[cfg(unix)]
+    pub(crate) depth: Option<u8>,
+    #[cfg(unix)]
+    pub(crate) visual: Option<u32>,
 }
 
 impl Builder {
@@ -34,6 +38,10 @@ impl Builder {
                 None => Style::new(),
             },
             title: Cow::Borrowed("a nice window"),
+            #[cfg(unix)]
+            depth: None,
+            #[cfg(unix)]
+            visual: None,
         }
     }
 
@@ -133,6 +141,18 @@ impl Builder {
     /// Defaults to `true`.
     pub fn visible(mut self, visible: bool) -> Self {
         self.style.visible = visible;
+        self
+    }
+
+    #[cfg(unix)]
+    pub fn depth(mut self, depth: u8) -> Self {
+        self.depth = Some(depth);
+        self
+    }
+
+    #[cfg(unix)]
+    pub fn visual(mut self, visual: u32) -> Self {
+        self.visual = Some(visual);
         self
     }
 }
