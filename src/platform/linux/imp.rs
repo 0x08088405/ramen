@@ -1014,6 +1014,7 @@ fn keysym_to_key(keysym: KeySym, keysym2: KeySym) -> Option<Key> {
     // To avoid some annoying situations we also request keysym2 which is the modified keysym.
     // Values mostly copied from <X11/keysymdef.h>
     match keysym {
+        0x20 => Some(Key::Space),
         0x22 => Some(Key::Quote),
         0x23 => Some(Key::Hash),
         0x27 => Some(Key::Apostrophe),
