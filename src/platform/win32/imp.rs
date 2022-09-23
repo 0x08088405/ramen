@@ -9,7 +9,7 @@ use crate::{
     error::Error,
     event::Event,
     util::{sync::{self, Condvar, Mutex}, LazyCell},
-    window::{self, Style},
+    window::{self, Cursor, Style},
 };
 
 #[cfg(feature = "input")]
@@ -27,6 +27,7 @@ const BASE_DPI: UINT = 96;
 /// Custom window message
 const RAMEN_WM_CREATE: UINT = WM_USER + 0;
 const RAMEN_WM_DROP: UINT = WM_USER + 1;
+const RAMEN_WM_SETCURSOR: UINT = WM_USER + 2;
 
 /// Checks the current Windows version (see usage in `Win32State`)
 unsafe fn is_windows_ver_or_greater(dl: &Win32DL, major: WORD, minor: WORD, sp_major: WORD) -> bool {
@@ -390,11 +391,31 @@ struct WindowState {
     event_frontbuf: Vec<Event>,
     event_sync: Mutex<()>,
     mouse_tracked: bool,
+    cursor: HCURSOR,
     dpi: UINT,
     is_max: bool,
     is_min: bool,
     style: Style,
     wh: (u16, u16),
+}
+
+fn cursor_to_int_resource(cursor: Cursor) -> *const WCHAR {
+    match cursor {
+        Cursor::Arrow => IDC_ARROW,
+        Cursor::Blank => ptr::null(),
+        Cursor::Cross => IDC_CROSS,
+        Cursor::Hand => IDC_HAND,
+        Cursor::Help => IDC_HELP,
+        Cursor::IBeam => IDC_IBEAM,
+        Cursor::Progress => IDC_APPSTARTING,
+        Cursor::ResizeNESW => IDC_SIZENESW,
+        Cursor::ResizeNS => IDC_SIZENS,
+        Cursor::ResizeNWSE => IDC_SIZENWSE,
+        Cursor::ResizeWE => IDC_SIZEWE,
+        Cursor::ResizeAll => IDC_SIZEALL,
+        Cursor::Unavailable => IDC_NO,
+        Cursor::Wait => IDC_WAIT,
+    }
 }
 
 unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
@@ -415,6 +436,14 @@ unsafe fn make_window(builder: window::Builder) -> Result<Window, Error> {
         event_frontbuf: Vec::new(),
         event_sync: Mutex::new(()),
         mouse_tracked: false,
+        cursor: {
+            let rsrc = cursor_to_int_resource(builder.cursor);
+            if !rsrc.is_null() {
+                LoadImageW(ptr::null_mut(), rsrc, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED).cast()
+            } else {
+                ptr::null_mut()
+            }
+        },
         dpi,
         is_max: false,
         is_min: false,
@@ -502,6 +531,12 @@ impl Window {
             let _ = set_instance_storage(self.hwnd, GWL_STYLE, dw_style as _);
             let _ = set_instance_storage(self.hwnd, GWL_EXSTYLE, dw_style_ex as _);
             ping_window_frame(self.hwnd);
+        }
+    }
+
+    pub(crate) fn set_cursor(&self, cursor: Cursor) {
+        unsafe {
+            _ = SendMessageW(self.hwnd, RAMEN_WM_SETCURSOR, cursor as u32 as WPARAM, 0);
         }
     }
 
@@ -1233,11 +1268,40 @@ pub unsafe extern "system" fn window_proc(hwnd: HWND, msg: UINT, wparam: WPARAM,
             0
         },
 
+        WM_SETCURSOR => {
+            if (hwnd == wparam as HWND) && ((lparam & 0xFFFF) as WORD == HTCLIENT as WORD) {
+                _ = SetCursor((*user_state(hwnd)).cursor);
+                TRUE as LRESULT
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        },
+
         // Custom message: The "real" destroy signal that won't be rejected.
         // TODO: document the rejection emchanism somewhere
         // Return 0.
         RAMEN_WM_DROP => {
             let _ = DestroyWindow(hwnd);
+            0
+        },
+
+        RAMEN_WM_SETCURSOR => {
+            let state = &mut *user_state(hwnd);
+            let cursor = mem::transmute::<_, Cursor>(wparam as u32);
+            let rsrc = cursor_to_int_resource(cursor);
+
+            // `LoadImageW` is not only superseding `LoadCursorW` but it's ~20µs faster. Wow, use this!
+            state.cursor = if !rsrc.is_null() {
+                LoadImageW(ptr::null_mut(), rsrc, IMAGE_CURSOR, 0, 0, LR_DEFAULTSIZE | LR_SHARED).cast()
+            } else {
+                ptr::null_mut()
+            };
+
+            // Immediately update the cursor icon if it's within the client area.
+            let mut mouse_pos: POINT = mem::zeroed();
+            if GetCursorPos(&mut mouse_pos) != 0 && WindowFromPoint(POINT { ..mouse_pos }) == hwnd {
+                _ = SetCursor(state.cursor);
+            }
             0
         },
 

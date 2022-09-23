@@ -1,4 +1,4 @@
-use super::{Controls, Style};
+use super::{Cursor, Controls, Style};
 use crate::{connection::Connection, error::Error, platform::imp};
 
 use std::borrow::Cow;
@@ -11,6 +11,7 @@ use std::borrow::Cow;
 /// Builders can be cloned if you'd like to re-use one to build multiple windows.
 #[derive(Clone)]
 pub struct Builder {
+    pub(crate) cursor: Cursor,
     pub(crate) connection: Connection,
     pub(crate) class_name: Cow<'static, str>,
     pub(crate) maximised: bool,
@@ -27,6 +28,7 @@ pub struct Builder {
 impl Builder {
     pub(crate) const fn new(connection: Connection, style: Option<Style>) -> Self {
         Builder {
+            cursor: Cursor::Arrow,
             connection,
             class_name: Cow::Borrowed("ramen_window"),
             maximised: false,
@@ -55,6 +57,11 @@ impl Builder {
     /// Defaults to `false`.
     pub fn borderless(mut self, borderless: bool) -> Self {
         self.style.borderless = borderless;
+        self
+    }
+
+    pub fn cursor(mut self, cursor: Cursor) -> Self {
+        self.cursor = cursor;
         self
     }
 

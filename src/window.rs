@@ -8,6 +8,53 @@ pub use self::{
 
 use crate::{event::Event, platform::imp};
 
+/// yeah
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum Cursor {
+    /// ⇖
+    Arrow = 0,
+
+    /// (Invisible)
+    Blank,
+
+    /// \+
+    Cross,
+
+    /// 👆
+    Hand,
+
+    /// 👆?
+    Help,
+
+    /// I
+    IBeam,
+
+    /// ⇖⌛
+    Progress,
+
+    /// ⤢
+    ResizeNESW,
+
+    /// ↕
+    ResizeNS,
+
+    /// ⤡
+    ResizeNWSE,
+
+    /// ↔
+    ResizeWE,
+
+    /// ✥
+    ResizeAll,
+
+    /// 🚫
+    Unavailable,
+
+    /// ⌛
+    Wait,
+}
+
 /// Represents an open window. Dropping it closes the window.
 ///
 /// To instantiate windows, use a [`builder`](crate::connection::Connection::builder).
@@ -23,6 +70,17 @@ impl Window {
     /// assumptions about what type this function will return, other than that it will be iterable for `Event`s.
     pub fn events(&self) -> impl IntoIterator<Item = &Event> {
         self.0.events()
+    }
+
+    pub fn set_cursor(&self, cursor: Cursor) {
+        #[cfg(windows)]
+        {
+            self.0.set_cursor(cursor)
+        }
+        #[cfg(not(windows))]
+        {
+            _ = cursor;
+        }
     }
 
     /// Pulls any new events into the buffer, discarding any events which were previously in the buffer.

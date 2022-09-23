@@ -1,4 +1,4 @@
-use ramen::{connection::Connection, event::Event}; // There's no actual error here it's an RA bug sorry in advance
+use ramen::{connection::Connection, event::Event, window::Cursor}; // There's no actual error here it's an RA bug sorry in advance
 
 #[cfg(feature = "input")]
 use ramen::input::Key;
@@ -88,6 +88,9 @@ pub fn f(connection: Connection) {
                         Key::B => {
                             borderless = !borderless;
                             window.set_borderless(borderless);
+                        },
+                        Key::C => {
+                            window.set_cursor(Cursor::Cross);
                         },
                         _ => (),
                     }

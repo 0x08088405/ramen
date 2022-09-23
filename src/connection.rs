@@ -1,6 +1,9 @@
-use crate::{error::Error, platform::imp, util::sync, window::Builder};
+use crate::{error::Error, platform::imp, window::Builder};
 use crate::util::sync::Mutex;
 use std::sync::Arc;
+
+#[cfg(unix)]
+use crate::util::sync;
 
 /// A connection to a windowing backend, used as a factory object to create [`Window`](crate::window::Window)s and
 /// [`Builder`](Builder)s.
